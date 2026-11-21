@@ -9,7 +9,10 @@ module MTDesign
     module Updater
       REPO        = 'thinhnguyenarc79-debug/mt-layout-tools'.freeze
       BRANCH      = 'main'.freeze
-      MANIFEST    = "https://raw.githubusercontent.com/#{REPO}/#{BRANCH}/version.json".freeze
+      RAW_BASE    = "https://raw.githubusercontent.com/#{REPO}/#{BRANCH}".freeze
+      API_BASE    = "https://api.github.com/repos/#{REPO}/contents".freeze
+      RAW_ACCEPT  = { 'Accept' => 'application/vnd.github.raw' }.freeze
+      MANIFEST    = "#{RAW_BASE}/version.json".freeze
       PREF_KEY    = 'MTDesign_LayoutTools'.freeze
       CHECK_EVERY = 24 * 60 * 60 # giây
 
@@ -28,8 +31,7 @@ module MTDesign
           return if @busy
           @busy = true
           Sketchup.status_text = 'MT Layout Tools: đang kiểm tra cập nhật...'
-          url = "#{MANIFEST}?t=#{Time.now.to_i}" # tránh cache
-          http_get(url) do |ok, body, err|
+          fetch_fresh('version.json') do |ok, body, err|
             @busy = false
             Sketchup.status_text = ''
             Sketchup.write_default(PREF_KEY, 'last_check', Time.now.to_i) if ok
@@ -83,10 +85,10 @@ module MTDesign
         end
 
         def download_and_install(info)
-          url = info['rbz_url'].to_s
-          raise 'version.json thiếu rbz_url' if url.empty?
+          path = info['rbz_path'].to_s
+          path = 'dist/mt_layout_tools.rbz' if path.empty?
           Sketchup.status_text = 'MT Layout Tools: đang tải bản cập nhật...'
-          http_get("#{url}?t=#{Time.now.to_i}") do |ok, body, err|
+          fetch_fresh(path) do |ok, body, err|
             Sketchup.status_text = ''
             unless ok
               UI.messagebox("Tải bản cập nhật thất bại.\n#{err}")
@@ -142,15 +144,27 @@ module MTDesign
           end
         end
 
+        # Lấy file mới nhất trong kho: ưu tiên GitHub API (không bị cache ~5 phút như raw),
+        # lỗi (vd. vượt giới hạn 60 lượt/giờ) thì dùng link raw.
+        def fetch_fresh(rel_path, &block)
+          http_get("#{API_BASE}/#{rel_path}?ref=#{BRANCH}", 5, RAW_ACCEPT) do |ok, body, err|
+            if ok
+              block.call(true, body, nil)
+            else
+              http_get("#{RAW_BASE}/#{rel_path}?t=#{Time.now.to_i}", 5, {}, &block)
+            end
+          end
+        end
+
         # GET bất đồng bộ bằng Sketchup::Http (không treo giao diện). Tự theo chuyển hướng 3xx.
-        def http_get(url, redirects = 5, &block)
+        def http_get(url, redirects = 5, extra_headers = {}, &block)
           req = Sketchup::Http::Request.new(url, Sketchup::Http::GET)
-          req.headers = { 'User-Agent' => "MTLayoutTools/#{VERSION}", 'Cache-Control' => 'no-cache' }
+          req.headers = { 'User-Agent' => "MTLayoutTools/#{VERSION}", 'Cache-Control' => 'no-cache' }.merge(extra_headers)
           @request = req
           req.start do |_r, res|
             code = res.status_code.to_i
             if (300..399).cover?(code) && redirects > 0 && res.headers['Location']
-              http_get(res.headers['Location'], redirects - 1, &block)
+              http_get(res.headers['Location'], redirects - 1, extra_headers, &block)
             elsif code == 200
               block.call(true, res.body, nil)
             else

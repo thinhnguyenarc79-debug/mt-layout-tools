@@ -1,6 +1,7 @@
 {
   "version": "1.1.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
-  "sha256": "2d3ff3db1a83df1eb29eb6520d31b38db533041d3a0b43bb470b26e9c6b79709",
-  "notes": "Tích hợp dàn trang MT Mặt Bằng vào bảng MT Layout Tools."
+  "rbz_path": "dist/mt_layout_tools.rbz",
+  "sha256": "8d56f84ccde555b92e9995679490d1442f149d9e7d2a7cb7fe4ecb6ee87eb5c2",
+  "notes": "Tích hợp dàn trang MT Mặt Bằng vào bảng MT Layout Tools; nút Cập nhật nhận bản mới ngay (không chờ cache GitHub)."
 }

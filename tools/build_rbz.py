@@ -28,6 +28,7 @@ sha = hashlib.sha256(rbz.read_bytes()).hexdigest()
 manifest = {
     "version": version,
     "rbz_url": f"https://raw.githubusercontent.com/{REPO}/main/dist/mt_layout_tools.rbz",
+    "rbz_path": "dist/mt_layout_tools.rbz",
     "sha256": sha,
     "notes": notes,
 }
