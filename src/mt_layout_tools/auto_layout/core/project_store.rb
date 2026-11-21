@@ -9,14 +9,15 @@ module MTDesign
         module_function
 
         DICT = 'MTDesign_AutoLayout'.freeze
-        VERSION = 2
+        VERSION = 3 # 3: project_id, saved_at, bố cục cố định từng hình (x_mm/y_mm/tờ cho cả hình tự động)
+        SCHEMA = 'mt-autolayout-project'.freeze
         VIEW_KEYS = %w[front open left right back top bottom iso].freeze
         TB_FIELDS = %w[client project location company company_info lead designer checker drafter date].freeze
         MAX_BYTES = 20 * 1024 * 1024
 
         def default_project
           {
-            'version' => VERSION, 'name' => 'Dự án mới', 'paper' => 'A3',
+            'version' => VERSION, 'project_id' => new_id('prj'), 'saved_at' => nil, 'name' => 'Dự án mới', 'paper' => 'A3',
             'tb' => { 'company' => 'MT DESIGN', 'company_info' => 'Kiến trúc & Nội thất Mạnh Trường',
                       'date' => Time.now.strftime('%d.%m.%Y') },
             'exclude_tags' => [], 'door_tag' => '',
@@ -30,6 +31,10 @@ module MTDesign
             'min_gap' => 0, 'round' => 1, 'front' => '-Y' }
         end
 
+        def new_id(prefix)
+          "#{prefix}-#{Time.now.strftime('%y%m%d%H%M%S')}-#{rand(36**6).to_s(36)}"
+        end
+
         def str(v, max = 200)
           v.to_s.strip[0, max]
         end
@@ -39,6 +44,8 @@ module MTDesign
           raise ArgumentError, 'Dữ liệu dự án không hợp lệ.' unless raw.is_a?(Hash)
 
           p = default_project
+          p['project_id'] = str(raw['project_id'], 60) =~ /\A[\w.-]{4,60}\z/ ? str(raw['project_id'], 60) : p['project_id']
+          p['saved_at'] = str(raw['saved_at'], 40).empty? ? nil : str(raw['saved_at'], 40)
           p['name'] = str(raw['name']).empty? ? p['name'] : str(raw['name'])
           p['paper'] = Sheet::PAPERS.key?(raw['paper']) ? raw['paper'] : 'A3'
           tb = raw['tb'].is_a?(Hash) ? raw['tb'] : {}
@@ -228,15 +235,18 @@ module MTDesign
             sc = nil unless sc.between?(1, 500)
             locked = v['scale_locked'] == true && !sc.nil?
             pos = v['position_locked'] == true
-            # vị trí thủ công: toạ độ mm trên giấy (góc trên-trái khung hình) + tờ chứa hình
-            manual = v['placement_mode'] == 'manual' && v['x_mm'].is_a?(Numeric) && v['y_mm'].is_a?(Numeric)
-            next if sc.nil? && !pos && !manual
+            # Vị trí trên giấy (mm, góc trên-trái khung hình) + tờ chứa hình. Có cho CẢ hình tự động (bố cục đã chốt
+            # lần dựng đầu) -> không bao giờ tự tính lại; chỉ "Dàn trang lại" mới xoá.
+            # placement_mode: 'auto' = plugin đặt, 'manual' = người dùng đã chỉnh (vẫn kéo tiếp được).
+            has = v['x_mm'].is_a?(Numeric) && v['y_mm'].is_a?(Numeric)
+            manual = v['placement_mode'] == 'manual' && has
+            next if sc.nil? && !pos && !has
 
             h[k.to_s] = { 'scale_override' => sc, 'scale_locked' => locked, 'position_locked' => pos,
                           'placement_mode' => manual ? 'manual' : 'auto',
-                          'x_mm' => manual ? v['x_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
-                          'y_mm' => manual ? v['y_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
-                          'sheet' => manual ? v['sheet'].to_i.clamp(0, 49) : nil }
+                          'x_mm' => has ? v['x_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
+                          'y_mm' => has ? v['y_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
+                          'sheet' => has ? v['sheet'].to_i.clamp(0, 49) : nil }
           end
         end
 
@@ -271,20 +281,83 @@ module MTDesign
           default_project
         end
 
-        # Ghi vào model thành 1 thao tác (Ctrl+Z được). Chỉ thêm thuộc tính, không đụng hình học.
+        # LƯU DỰ ÁN: ghi vào thuộc tính của model thành 1 thao tác (Ctrl+Z được), không đụng hình học.
+        # Đọc lại để xác nhận đã ghi đúng – lỗi thì báo lỗi, không báo thành công.
+        # Lưu ý: đây là dữ liệu trong model đang mở; file .skp chỉ được ghi xuống ổ đĩa khi người dùng lưu SKP.
         def save(model, project)
+          project = clean(project)
+          project['saved_at'] = Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ')
+          json = JSON.generate(project)
           model.start_operation('AUTO LAYOUT PRO – Lưu dự án', true)
-          model.set_attribute(DICT, 'project', JSON.generate(project))
+          model.set_attribute(DICT, 'project', json)
           model.commit_operation
+          raise IOError, 'Đọc lại dữ liệu vừa lưu không khớp – chưa lưu được dự án.' unless model.get_attribute(DICT, 'project') == json
+
+          project
         rescue StandardError
-          model.abort_operation
+          begin
+            model.abort_operation
+          rescue StandardError
+            nil
+          end
           raise
+        end
+
+        # Bản sao .json độc lập: có schema, phiên bản, thời điểm tạo.
+        def export_doc(project, meta = {})
+          { 'schema' => SCHEMA, 'schema_version' => VERSION, 'created_at' => Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'plugin_version' => meta['plugin_version'], 'skp_path' => meta['skp_path'], 'project' => clean(project) }
+        end
+
+        # Nhận cả bản sao mới (có schema) lẫn tệp .json cũ (chỉ dự án).
+        def import_doc(raw)
+          raise ArgumentError, 'Tệp không phải dự án AUTO LAYOUT.' unless raw.is_a?(Hash)
+
+          if raw['schema'] == SCHEMA
+            raise ArgumentError, "Bản sao tạo bởi phiên bản mới hơn (schema #{raw['schema_version']})." if raw['schema_version'].to_i > VERSION
+
+            clean(raw['project'])
+          else
+            clean(raw)
+          end
         end
 
         def read_file(path)
           raise ArgumentError, 'Tệp dự án quá lớn.' if File.size(path) > MAX_BYTES
 
-          clean(JSON.parse(File.read(path, encoding: 'UTF-8')))
+          import_doc(JSON.parse(File.read(path, encoding: 'UTF-8')))
+        end
+
+        # THÊM MODEL (giao dịch): dựng trang MỚI cho các model chưa có trang, KHÔNG đụng dự án hiện tại.
+        # Trả { 'pages' => trang mới (chưa ghép), 'existing' => [pid đã có trang], 'missing' => [pid không tìm thấy] }.
+        def new_pages(project, pids, finder)
+          have = project['pages'].map { |pg| pg['pid'] }
+          res = { 'pages' => [], 'existing' => [], 'missing' => [] }
+          tmp = { 'pages' => project['pages'].dup }
+          pids.map(&:to_i).uniq.each do |pid|
+            if have.include?(pid)
+              res['existing'] << pid
+              next
+            end
+            found = finder.call(pid)
+            unless found
+              res['missing'] << pid
+              next
+            end
+            found = { 'name' => found.to_s, 'root' => true } unless found.is_a?(Hash)
+            pg = clean_page(project['defaults'].merge('pid' => pid, 'name' => found['name'], 'root' => found['root'] != false,
+                                                      'offsets' => {}, 'sheet_no' => next_sheet_no(tmp)))
+            tmp['pages'] << pg
+            res['pages'] << pg
+          end
+          res
+        end
+
+        # Ghép trang mới vào CUỐI dự án; trang cũ giữ nguyên tuyệt đối (không sửa, không đổi thứ tự).
+        def append_pages(project, pages)
+          have = project['pages'].map { |pg| pg['pid'] }
+          pages.each { |pg| project['pages'] << clean_page(pg) unless have.include?(pg['pid']) }
+          project
         end
       end
     end

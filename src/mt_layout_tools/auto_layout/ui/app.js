@@ -24,11 +24,28 @@
         setModels(d.models, d.notice); S.status = d.status || {};
         buildStatic(); renderAll();
         if (d.notice) msg(d.notice, 'warn');
+        S.dirty = !!d.unsaved_session; setSaveState(S.dirty ? 'unsaved' : (S.project.saved_at ? 'saved' : 'none'));
         if (S.project.pages.length) openPage(S.project.pages[0].id);
+        if (d.draft) draftDialog(d.draft);
       } else if (kind === 'models') {
         S.tags = d.tags; setModels(d.models, d.notice); if (d.status) S.status = d.status;
         renderModels(); renderTags(); renderPages();
+        if (S.pendingAdd) {
+          S.pendingAdd = false;
+          if (!d.models.length) { msg(d.notice || 'Chưa chọn Group/Component nào trong SketchUp.', 'err'); return; }
+          busy(true); call('add_models', { project: S.project, pids: d.models.map(function (m) { return m.pid; }) });
+          return;
+        }
         d.notice ? msg(d.notice, 'warn') : msg('Đã lấy ' + d.models.length + ' đối tượng đang chọn.', 'ok');
+      } else if (kind === 'models_added') {
+        onModelsAdded(d);
+      } else if (kind === 'project_saved') {
+        S.project.saved_at = d.saved_at; S.project.project_id = d.project_id; S.dirty = false;
+        clearTimeout(S.autoTimer); setSaveState('saved'); msg(d.message, d.skp_saved ? 'ok' : 'warn');
+      } else if (kind === 'autosaved') {
+        if (S.dirty) setSaveState('drafted', d.at);
+      } else if (kind === 'autosave_error') {
+        setSaveState('error'); msg(d.message, 'err');
       } else if (kind === 'project') {
         snapshot(); S.project = d.project; if (d.status) S.status = d.status; markDirty(); renderAll();
         openPage(d.open || (S.project.pages[0] && S.project.pages[0].id));
@@ -58,7 +75,6 @@
         msg(d.message, 'warn');
       } else if (kind === 'saved') {
         msg(d.message, 'ok');
-        if (/dự án/.test(d.message)) S.dirty = false;
       } else if (kind === 'error') {
         busy(false); msg(d.message, 'err');
       }
@@ -82,7 +98,20 @@
     if (!S.project) return;
     S.undo.push(JSON.stringify(S.project)); if (S.undo.length > 100) S.undo.shift(); S.redo = [];
   }
-  function markDirty() { S.dirty = true; }
+  // Trạng thái lưu: none | saved | unsaved | drafting | drafted | error. Tự lưu BẢN NHÁP sau 2 s không thao tác
+  // (không theo từng pixel kéo chuột: chỉ gọi khi dữ liệu dự án đã đổi).
+  function setSaveState(st, at) {
+    S.saveState = st; var el = $('saveState'); if (!el) return;
+    var t = at ? new Date(at) : null, hm = t ? ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) : '';
+    var map = { none: ['Chưa lưu dự án', 'unsaved'], saved: ['✓ Đã lưu dự án', 'saved'], unsaved: ['● Chưa lưu', 'unsaved'],
+                drafting: ['Đang lưu nháp…', 'draft'], drafted: ['Đã lưu bản nháp ' + hm, 'draft'], error: ['⚠ Lỗi lưu', 'err'] };
+    var m = map[st] || map.none; el.textContent = m[0]; el.className = 'savest ' + m[1];
+  }
+  function markDirty() {
+    S.dirty = true; if (S.saveState !== 'drafting') setSaveState('unsaved');
+    clearTimeout(S.autoTimer);
+    S.autoTimer = setTimeout(function () { if (S.project && S.dirty) { setSaveState('drafting'); call('autosave', S.project); } }, 2000);
+  }
   function changed(render) { markDirty(); if (render !== false) requestRender(); }
 
   // Danh sách = đúng các đối tượng đang chọn trong SketchUp; tất cả được tick sẵn.
@@ -208,7 +237,7 @@
   function tidyProps(k) {
     var p = page(), v = p && p.view_props && p.view_props[k];
     if (v && !v.scale_override) v.scale_locked = false;
-    if (v && !v.scale_override && !v.position_locked && v.placement_mode !== 'manual') delete p.view_props[k];
+    if (v && !v.scale_override && !v.position_locked && v.x_mm == null) delete p.view_props[k];
   }
   // Vị trí thủ công (mm giấy, góc trên-trái khung hình) – lưu trong dữ liệu dự án, không phải pixel màn hình.
   function placeManual(k, x, y) {
@@ -218,7 +247,7 @@
   }
   function placeAuto(k) {
     var v = vprops(k), p = page();
-    if (v) { v.placement_mode = 'auto'; v.x_mm = v.y_mm = v.sheet = null; tidyProps(k); }
+    if (v) { v.placement_mode = 'auto'; v.x_mm = v.y_mm = v.sheet = null; tidyProps(k); } // dựng lại sẽ chốt chỗ tự động mới
     if (p.offsets) delete p.offsets[k];
   }
   function isManual(k) { var v = vprops(k); return !!(v && v.placement_mode === 'manual'); }
@@ -236,7 +265,7 @@
     if (sc) vprops(k, true).scale_override = sc;
     else if (vprops(k)) { vprops(k).scale_override = null; tidyProps(k); }
     changed(); requestRender(true);
-    msg(sc ? viewName(k) + ': tỉ lệ riêng 1:' + sc + ' – bố trí lại tự động, hình không vừa sẽ chuyển sang tờ khác.' : viewName(k) + ': theo tỉ lệ mặc định của trang.', 'ok');
+    msg(sc ? viewName(k) + ': tỉ lệ riêng 1:' + sc + ' – vị trí giữ nguyên (chồng hình/tràn giấy sẽ được báo; dùng "Dàn trang lại" nếu cần).' : viewName(k) + ': theo tỉ lệ mặc định của trang.', 'ok');
   }
   function customScale(k) {
     var v = window.prompt('Tỉ lệ riêng cho ' + viewName(k) + ' – nhập N cho 1:N', String(effScale(k) || 20));
@@ -254,21 +283,113 @@
   }
   function lockPos(k, on) {
     snapshot();
-    var b = S.info && S.info.boxes && S.info.boxes[k];
-    if (on && !isManual(k) && b) placeManual(k, b[0], b[1]); // khóa = giữ đúng X/Y đang thấy
+    var b = S.info && S.info.boxes && S.info.boxes[k], v0 = vprops(k, true);
+    if (on && v0.x_mm == null && b) { v0.placement_mode = 'auto'; v0.x_mm = b[0]; v0.y_mm = b[1]; v0.sheet = S.sheet || 0; } // giữ đúng X/Y đang thấy
     vprops(k, true).position_locked = !!on; tidyProps(k); changed(false); renderViewProps(); overlay();
     msg(viewName(k) + (on ? ': đã khóa vị trí.' : ': đã mở khóa vị trí.'), 'ok');
   }
-  // Bố trí lại: hình chưa khóa vị trí về chỗ tự động; withScale -> hình chưa khóa tỉ lệ về tỉ lệ trang.
-  function relayout(withScale) {
-    var p = page(); if (!p) return;
-    snapshot();
-    var vp = p.view_props || {};
-    Object.keys(p.offsets || {}).forEach(function (k) { if (!(vp[k] && vp[k].position_locked)) delete p.offsets[k]; });
-    Object.keys(vp).forEach(function (k) { if (!vp[k].position_locked && vp[k].placement_mode === 'manual') placeAuto(k); });
-    if (withScale) Object.keys(vp).forEach(function (k) { if (!vp[k].scale_locked) { vp[k].scale_override = null; tidyProps(k); } });
-    changed(); requestRender(true);
-    msg('Đã bố trí lại' + (withScale ? ' (hình đã khóa giữ nguyên tỉ lệ' : ' (') + ', hình khóa vị trí giữ chỗ).', 'ok');
+  // DÀN TRANG LẠI – chỉ khi người dùng chủ động chọn. Xoá vị trí đã chốt của các hình CHƯA KHÓA trong phạm vi
+  // (kể cả hình đã chỉnh tay nếu người dùng đồng ý); hình đã khóa giữ nguyên. Tỉ lệ, DIM, chú thích không đổi. Có ↶.
+  function relayoutPages(pages, sheetOnly, withManual) {
+    var n = 0;
+    pages.forEach(function (p) {
+      var vp = p.view_props || {};
+      Object.keys(vp).forEach(function (k) {
+        var v = vp[k];
+        if (v.position_locked || v.x_mm == null) return;
+        if (sheetOnly != null && (v.sheet || 0) !== sheetOnly) return;
+        if (v.placement_mode === 'manual' && !withManual) return;
+        v.placement_mode = 'auto'; v.x_mm = v.y_mm = v.sheet = null; n++;
+        if (!v.scale_override) delete vp[k];
+      });
+      if (p.offsets && sheetOnly == null) Object.keys(p.offsets).forEach(function (k) { if (!(vp[k] && vp[k].position_locked)) delete p.offsets[k]; });
+    });
+    return n;
+  }
+  function manualCount(pages) {
+    var n = 0; pages.forEach(function (p) { var vp = p.view_props || {}; Object.keys(vp).forEach(function (k) { if (vp[k].placement_mode === 'manual' && !vp[k].position_locked) n++; }); });
+    return n;
+  }
+  function relayout() { relayoutDialog(); } // tương thích lời gọi cũ
+  function relayoutDialog() {
+    if (!S.project.pages.length) { msg('Chưa có trang nào.', 'warn'); return; }
+    var p = page();
+    var body = '<label class="opt"><input type="radio" name="rs" value="sheet" checked> Tờ đang xem' + (p ? ' (' + esc(curCode()) + ')' : '') + '</label>' +
+      '<label class="opt"><input type="radio" name="rs" value="page"> Model hiện tại – mọi tờ' + (p ? ' (' + esc(p.name) + ')' : '') + '</label>' +
+      '<label class="opt"><input type="radio" name="rs" value="chosen"> Các model được chọn:</label><div class="sub">' +
+      S.project.pages.map(function (x) { return '<label class="opt"><input type="checkbox" class="rp" value="' + esc(x.id) + '"> ' + esc(x.sheet_no + ' – ' + x.name) + '</label>'; }).join('') + '</div>' +
+      '<label class="opt"><input type="radio" name="rs" value="all"> Toàn bộ dự án (' + S.project.pages.length + ' model)</label>' +
+      '<label class="opt"><input type="checkbox" id="rsManual" checked> Dàn lại cả hình đã chỉnh tay (hình đã KHÓA luôn giữ nguyên)</label>' +
+      '<p class="hint">Chỉ đổi vị trí hình chiếu. Tỉ lệ, khóa, DIM, Text, Leader, mặt cắt giữ nguyên. Có thể ↶ hoàn tác.</p>';
+    dialog('Dàn trang lại', body, [['Hủy', null], ['Dàn trang lại', function () {
+      var sc = document.querySelector('input[name=rs]:checked').value, pages = [], sheetOnly = null;
+      if (sc === 'sheet' || sc === 'page') { if (!p) return; pages = [p]; if (sc === 'sheet') sheetOnly = S.sheet || 0; }
+      if (sc === 'all') pages = S.project.pages.slice();
+      if (sc === 'chosen') { var ids = Array.prototype.map.call(document.querySelectorAll('.rp:checked'), function (c) { return c.value; }); pages = S.project.pages.filter(function (x) { return ids.indexOf(x.id) >= 0; }); }
+      if (!pages.length) { msg('Chưa chọn model nào.', 'warn'); return false; }
+      var withManual = $('rsManual').checked, man = manualCount(pages);
+      if (withManual && man && !window.confirm(man + ' hình đã được bạn chỉnh tay trong phạm vi này sẽ về vị trí tự động. Tiếp tục? (có thể ↶ hoàn tác)')) return false;
+      snapshot();
+      var n = relayoutPages(pages, sheetOnly, withManual);
+      changed(); requestRender(true);
+      msg('Đã dàn lại ' + n + ' hình trong ' + pages.length + ' model. Hình đã khóa giữ nguyên. ↶ để hoàn tác.', 'ok');
+    }, 'gold']]);
+  }
+
+  // Hộp thoại chung: buttons [[nhãn, hàm|null, class]] – hàm trả false để giữ hộp thoại mở
+  function dialog(title, html, buttons) {
+    $('dlgTitle').textContent = title; $('dlgBody').innerHTML = html;
+    var bx = $('dlgBtns'); bx.innerHTML = '';
+    buttons.forEach(function (b) {
+      var el = document.createElement('button'); el.textContent = b[0]; if (b[2]) el.className = b[2];
+      el.onclick = function () { if (b[1] && b[1]() === false) return; $('dlg').hidden = true; };
+      bx.appendChild(el);
+    });
+    $('dlg').hidden = false;
+  }
+
+  // Khôi phục bản nháp sau khi SketchUp tắt bất thường – không tự ghi đè bản chính.
+  function draftDialog(dr) {
+    var fmt = function (t) { return t ? new Date(t).toLocaleString('vi-VN') : 'chưa từng lưu'; };
+    var info = '<table><tr><td>Bản nháp</td><td>' + fmt(dr.draft_at) + ' · ' + dr.pages + ' trang</td></tr>' +
+      '<tr><td>Bản lưu chính</td><td>' + fmt(dr.main_saved_at) + ' · ' + dr.main_pages + ' trang</td></tr>' +
+      '<tr><td>File SKP</td><td>' + esc(dr.skp_path || '(chưa lưu)') + '</td></tr></table>';
+    var restore = function () {
+      snapshot(); S.project = dr.project; S.dirty = true; renderAll();
+      openPage(S.project.pages[0] && S.project.pages[0].id); setSaveState('unsaved');
+      msg('Đã khôi phục bản nháp. Bấm 💾 Lưu dự án để ghi thành bản chính.', 'warn');
+    };
+    var useMain = function () { call('discard_draft', { project_id: dr.project.project_id }); };
+    dialog('Phát hiện bản nháp chưa được lưu chính thức', '<p>Bạn muốn khôi phục không?</p><div id="drInfo" hidden>' + info + '</div>',
+      [['Xem thông tin bản nháp', function () { $('drInfo').hidden = !$('drInfo').hidden; return false; }],
+       ['Mở bản lưu chính', useMain], ['Khôi phục bản nháp', restore, 'gold']]);
+  }
+
+  // THÊM MODEL: kết quả giao dịch từ Ruby – chỉ GHÉP trang mới vào cuối, không sửa trang cũ.
+  function onModelsAdded(d) {
+    busy(false);
+    var parts = [];
+    if (d.pages.length) {
+      snapshot(); // ↶ hoàn tác cả lần thêm
+      var have = S.project.pages.map(function (x) { return x.pid; });
+      d.pages.forEach(function (pg) { if (have.indexOf(pg.pid) < 0) S.project.pages.push(pg); });
+      markDirty(); renderAll(); openPage(d.pages[0].id);
+      parts.push('Đã thêm ' + d.pages.length + ' model vào cuối dự án (trang cũ giữ nguyên)');
+    }
+    if (d.failed.length) parts.push('Không thêm được: ' + d.failed.map(function (f) { return f.name + ' (' + f.message + ')'; }).join('; '));
+    if (d.missing.length) parts.push(d.missing.length + ' model không còn trong SketchUp');
+    if (parts.length) msg(parts.join('. ') + '.', d.failed.length ? 'warn' : 'ok');
+    if (d.existing.length) {
+      var ex = S.project.pages.filter(function (x) { return d.existing.indexOf(x.pid) >= 0; });
+      dialog('Model đã có trong dự án', '<p>' + ex.length + ' model đã có bản vẽ – không tạo trang trùng:</p><div class="sub">' +
+        ex.map(function (x) { return esc(x.sheet_no + ' – ' + x.name); }).join('<br>') + '</div>' +
+        '<p class="hint">Cập nhật = đọc lại hình học, GIỮ NGUYÊN bố cục, tỉ lệ, DIM, chú thích.</p>',
+        [['Bỏ qua', null], ['Cập nhật các model này', function () {
+          openPage(ex[0].id); busy(true);
+          call('refresh', { project: S.project, page_id: ex[0].id, sheet: 0 });
+          msg('Đang cập nhật hình học – bố cục giữ nguyên.', 'ok');
+        }, 'gold']]);
+    }
   }
 
   function renderViewProps() {
@@ -283,14 +404,14 @@
       '<tr><td>Tỉ lệ đang in</td><td><b>1:' + eff + '</b>' + (lk ? ' 🔒' : '') + '</td></tr>' +
       '<tr><td>Vị trí trên giấy</td><td>' + b[0].toFixed(1) + ', ' + b[1].toFixed(1) + ' mm</td></tr>' +
       '<tr><td>Khung chiếm chỗ</td><td>' + b[2].toFixed(1) + ' × ' + b[3].toFixed(1) + ' mm</td></tr>' +
-      '<tr><td>Cách đặt</td><td>' + (v.placement_mode === 'manual' ? 'Thủ công (tờ ' + ((v.sheet || 0) + 1) + ')' : 'Tự động' + (off[0] || off[1] ? ' + dịch ' + off[0].toFixed(1) + ', ' + off[1].toFixed(1) : '')) + (v.position_locked ? ' · 🔒' : '') + '</td></tr>' +
+      '<tr><td>Trạng thái vị trí</td><td>' + (v.position_locked ? '🔒 Đã khóa' : v.placement_mode === 'manual' ? 'Đã chỉnh thủ công' : 'Tự động') + (v.x_mm != null ? ' (tờ ' + ((v.sheet || 0) + 1) + ')' : '') + '</td></tr>' +
       '</table><label>Tỉ lệ riêng của hình</label><select id="vScale"' + (lk ? ' disabled title="Đang khóa tỉ lệ"' : '') + '>' +
       '<option value="0">' + esc(base) + '</option>' +
       list.map(function (n) { return '<option value="' + n + '"' + (v.scale_override === n ? ' selected' : '') + '>1:' + n + '</option>'; }).join('') +
       '<option value="custom">Tùy chỉnh…</option></select>' +
       '<div class="checks"><label><input id="vLock" type="checkbox"' + (lk ? ' checked' : '') + '> Khóa tỉ lệ</label>' +
       '<label><input id="vPos" type="checkbox"' + (v.position_locked ? ' checked' : '') + '> Khóa vị trí</label></div>' +
-      '<div class="btns"><button id="vReset"' + (v.position_locked ? ' disabled' : '') + '>Về vị trí tự động</button><button id="vRelayout">Tự động bố trí lại</button></div>';
+      '<div class="btns"><button id="vReset"' + (v.position_locked ? ' disabled' : '') + '>Về vị trí tự động</button><button id="vRelayout">Dàn trang lại…</button></div>';
     $('vScale').onchange = function () {
       if (this.value === 'custom') { customScale(k); renderViewProps(); return; }
       setViewScale(k, parseInt(this.value, 10) || null);
@@ -298,7 +419,7 @@
     $('vLock').onchange = function () { lockScale(k, this.checked); };
     $('vPos').onchange = function () { lockPos(k, this.checked); };
     $('vReset').onclick = function () { snapshot(); placeAuto(k); changed(); };
-    $('vRelayout').onclick = function () { relayout(true); };
+    $('vRelayout').onclick = function () { relayoutDialog(); };
   }
 
   // Biểu tượng khóa / tỉ lệ riêng: chỉ hiện trong trình biên tập (vẽ thêm phía JS, không có trong PDF/SVG xuất).
@@ -404,7 +525,7 @@
     it(lk ? 'unlock' : 'lock', lk ? 'Mở khóa tỷ lệ' : 'Khóa tỷ lệ (1:' + eff + ')');
     it(v.position_locked ? 'unpos' : 'pos', v.position_locked ? 'Mở khóa vị trí' : 'Khóa vị trí');
     h.push('<div class="sep"></div>');
-    it('relayout', 'Tự động bố trí lại hình chiếu');
+    it('relayout', 'Dàn trang lại…');
     m.innerHTML = h.join(''); m.hidden = false;
     var w = m.offsetWidth, hh = m.offsetHeight;
     m.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 4)) + 'px';
@@ -420,7 +541,7 @@
       else if (act === 'unlock') lockScale(k, false);
       else if (act === 'pos') lockPos(k, true);
       else if (act === 'unpos') lockPos(k, false);
-      else if (act === 'relayout') relayout(true);
+      else if (act === 'relayout') relayoutDialog();
     };
   }
   $('stage').addEventListener('contextmenu', function (e) {
@@ -851,6 +972,18 @@
     paper.innerHTML = svg;
     var p = page();
     // KHÔNG ghi đè p.offsets từ kết quả dựng: kết quả chỉ chứa hình của tờ đang xem (lỗi cũ: chuyển tờ làm mất vị trí).
+    // CHỐT bố cục: hình chưa có toạ độ lưu -> ghi vị trí plugin vừa đặt (trạng thái "Tự động"). Từ đó không tính lại
+    // khi chuyển tờ, chuyển model, thêm model, mở lại hay xuất PDF – chỉ "Dàn trang lại" mới đổi.
+    if (p && info.layout) {
+      var froze = 0;
+      Object.keys(info.layout).forEach(function (k) {
+        var cur = vprops(k);
+        if (cur && cur.x_mm != null) return;
+        var v = vprops(k, true), L = info.layout[k];
+        v.placement_mode = 'auto'; v.x_mm = L[0]; v.y_mm = L[1]; v.sheet = L[2]; froze++;
+      });
+      if (froze) markDirty();
+    }
     if (p && info.sections && p.sections == null) p.sections = info.sections; // nhận vị trí cắt plugin đề xuất
     renderSections(); renderDetails(); renderDoors(); if (S.selNote) renderNotes();
     renderNav();
@@ -1126,8 +1259,11 @@
     var pids = S.models.filter(function (m) { return S.picked[m.pid]; }).map(function (m) { return m.pid; });
     if (!S.models.length) { msg(S.notice || 'Bạn chưa chọn Group hoặc Component trong SketchUp. Hãy chọn đối tượng cần triển khai trước.', 'err'); return; }
     if (!pids.length) { msg('Tick ít nhất 1 model ở danh sách.', 'err'); return; }
-    call('generate', { project: S.project, pids: pids, replace: $('replace').checked });
+    busy(true); call('add_models', { project: S.project, pids: pids });
   };
+  // ＋ Thêm model (thanh công cụ): đọc selection hiện tại rồi thêm ngay các model mới
+  $('addModels').onclick = function () { S.pendingAdd = true; call('scan', S.project); };
+  $('relayoutBtn').onclick = relayoutDialog;
 
   // Tag
   $('tList').onchange = function (e) {
@@ -1194,6 +1330,7 @@
   // Thuộc tính trang
   function readPage() {
     var p = page(); if (!p) return;
+    var before = JSON.stringify([p.scale, p.front, p.views]);
     snapshot();
     p.name = $('pgName').value;
     if ($('pgNo').value !== curCode()) { p.sheet_no = $('pgNo').value; p.auto_no = false; }
@@ -1203,13 +1340,20 @@
     p.min_gap = parseFloat($('pgGap').value) || 0; p.round = parseFloat($('pgRound').value) || 1;
     p.fill = $('pgFill').checked; p.dims = $('pgDims').checked;
     p.iso_mode = $('pgIsoMode').value; p.iso_hidden = $('pgIsoHidden').checked;
+    // Đổi tỉ lệ / hình chiếu / hướng của CHÍNH trang này: hỏi có dàn lại các hình tự động không (hình chỉnh tay & khóa giữ nguyên)
+    if (before !== JSON.stringify([p.scale, p.front, p.views])) {
+      var autoN = Object.keys(p.view_props || {}).filter(function (k) { var v = p.view_props[k]; return v.x_mm != null && v.placement_mode !== 'manual' && !v.position_locked; }).length;
+      if (autoN && window.confirm('Dàn lại ' + autoN + ' hình TỰ ĐỘNG của trang này theo cài đặt mới?\n(Hình đã chỉnh tay và đã khóa giữ nguyên. Chọn Cancel để giữ mọi vị trí hiện tại.)')) {
+        relayoutPages([p], null, false);
+      }
+    }
     renderPages(); changed();
   }
   ['pgName', 'pgNo', 'pgScale', 'pgFront', 'pgFrontDims', 'pgViews', 'pgGap', 'pgRound', 'pgFill', 'pgDims', 'pgIsoMode', 'pgIsoHidden'].forEach(function (id) {
     $(id).addEventListener('change', readPage);
   });
   $('pgPick').onclick = function () { var p = page(); if (p) call('pick', String(p.pid)); };
-  $('pgReset').onclick = function () { relayout(false); };
+  $('pgReset').onclick = function () { relayoutDialog(); };
 
   // Khung tên
   $('tbForm').addEventListener('change', function (e) {
@@ -1217,6 +1361,6 @@
     snapshot(); S.project.tb[k] = e.target.value; changed();
   });
 
-  window.addEventListener('beforeunload', function (e) { if (S.dirty) { e.returnValue = 'Dự án chưa lưu.'; } });
+  window.addEventListener('beforeunload', function (e) { if (S.dirty) { e.returnValue = 'Dự án chưa lưu chính thức (đã có bản nháp tự động).'; } });
   window.onload = function () { call('ready', null); };
 })();

@@ -19,6 +19,7 @@ require_relative 'core/sheet'
 require_relative 'core/page_build'
 require_relative 'core/model_scanner'
 require_relative 'core/project_store'
+require_relative 'core/draft_store'
 
 module MTDesign
   module LayoutTools
@@ -50,7 +51,8 @@ module MTDesign
             'export_svg' => :on_export_svg, 'save_json' => :on_save_json, 'open_json' => :on_open_json,
             'pick' => :on_pick, 'cancel' => :on_cancel, 'pick_doors' => :on_pick_doors,
             'assign_parts' => :on_assign_parts, 'highlight_parts' => :on_highlight_parts, 'scan_parts' => :on_scan_parts,
-            'highlight_part' => :on_highlight_part
+            'highlight_part' => :on_highlight_part, 'add_models' => :on_add_models, 'autosave' => :on_autosave,
+            'discard_draft' => :on_discard_draft
           }.each do |name, handler|
             d.add_action_callback(name) do |_ctx, arg|
               guard(d, name) { send(handler, d, arg) }
@@ -105,21 +107,62 @@ module MTDesign
 
         # Bản dự án đang biên tập (chưa bấm Lưu) giữ trong bộ nhớ theo từng file SKP: đóng/mở lại cửa sổ
         # plugin không mất vị trí/khóa vừa chỉnh. Không ghi vào file SKP cho tới khi người dùng bấm 💾 Lưu.
+        # (guid đổi mỗi lần lưu SKP -> dùng object_id của model đang mở trong phiên SketchUp này)
         def session_key
-          m = model
-          m.respond_to?(:guid) ? m.guid.to_s : m.object_id.to_s
+          model.object_id.to_s
+        end
+
+        def draft_dir
+          @draft_dir || DraftStore.default_dir
+        end
+
+        def plugin_version
+          defined?(LayoutTools::VERSION) ? LayoutTools::VERSION : ''
         end
 
         def remember(project)
           (@session ||= {})[session_key] = project
         end
 
+        # MỞ DỰ ÁN: bản đang sửa trong phiên này (đóng/mở lại cửa sổ) > bản lưu chính trong SKP.
+        # Nếu có bản nháp tự động mới hơn bản chính (vd. SketchUp tắt đột ngột) -> gửi kèm để người dùng chọn.
+        # Không chạy lại dàn trang: vị trí từng hình đã lưu trong dữ liệu dự án.
         def on_ready(d, _arg)
-          project = (@session ||= {})[session_key] || ProjectStore.load(model)
+          session = (@session ||= {})[session_key]
+          main = ProjectStore.load(model)
+          project = session || main
+          draft = nil
+          unless session
+            dr = DraftStore.find(draft_dir, main['project_id'], model.path.to_s)
+            if DraftStore.newer?(dr, main)
+              draft = { 'draft_at' => dr['draft_at'], 'base_saved_at' => dr['base_saved_at'], 'skp_path' => dr['skp_path'],
+                        'pages' => dr['pages'], 'project' => ProjectStore.clean(dr['project']),
+                        'main_saved_at' => main['saved_at'], 'main_pages' => main['pages'].length }
+            end
+          end
           sel = selection_payload(project)
           push(d, 'init', { 'project' => project, 'models' => sel['models'], 'notice' => sel['notice'], 'status' => sel['status'],
                             'tags' => sel['tags'], 'views' => Geometry::VIEWS.transform_values(&:first),
-                            'papers' => Sheet::PAPERS.keys, 'scales' => Sheet::SCALES })
+                            'papers' => Sheet::PAPERS.keys, 'scales' => Sheet::SCALES, 'draft' => draft,
+                            'skp_saved' => !model.path.to_s.empty?, 'unsaved_session' => !session.nil? && session != main })
+        end
+
+        # Tự lưu BẢN NHÁP (debounce phía giao diện). Không đụng bản lưu chính, không đụng file SKP.
+        def on_autosave(d, arg)
+          project = ProjectStore.clean(parse(arg))
+          remember(project)
+          at = DraftStore.write(draft_dir, project, 'skp_path' => model.path.to_s, 'model_title' => model.title.to_s,
+                                                    'plugin_version' => plugin_version)
+          push(d, 'autosaved', { 'at' => at })
+        rescue StandardError => e
+          log("autosave: #{e.class}: #{e.message}")
+          push(d, 'autosave_error', { 'message' => "Lỗi lưu bản nháp: #{e.message}" })
+        end
+
+        # Người dùng chọn "Mở bản lưu chính": cất bản nháp làm dự phòng, không hỏi lại.
+        def on_discard_draft(d, arg)
+          DraftStore.dismiss(draft_dir, parse(arg)['project_id'])
+          push(d, 'saved', { 'message' => 'Đang dùng bản lưu chính. Bản nháp đã được cất làm bản dự phòng.' })
         end
 
         # "Lấy đối tượng đang chọn" / "Quét lại": chỉ đọc selection hiện tại, không quét cả file.
@@ -129,6 +172,77 @@ module MTDesign
         end
 
         # Tạo trang cho các model được chọn. arg: { project, pids }.
+        # THÊM MODEL VÀO DỰ ÁN (giao dịch): chỉ dựng model MỚI vào vùng tạm; thành công mới gửi trang mới để ghép vào
+        # cuối dự án. Trang cũ không bị đọc lại, dựng lại hay đổi bất kỳ dữ liệu nào. Lỗi/Hủy -> không thêm gì.
+        # Model đã có trang -> báo lại để người dùng chọn Cập nhật hoặc Bỏ qua (không tạo trang trùng).
+        def on_add_models(d, arg)
+          data = parse(arg)
+          project = ProjectStore.clean(data['project'])
+          pids = Array(data['pids']).map(&:to_i).uniq
+          raise ArgumentError, 'Chưa chọn model nào để thêm.' if pids.empty?
+
+          res = ProjectStore.new_pages(project, pids, lambda do |pid|
+            e = ModelScanner.find(model, pid)
+            e && { 'name' => Geometry.instance_name(e), 'root' => !ModelScanner.nested?(e) }
+          end)
+          if res['pages'].empty?
+            push(d, 'models_added', { 'pages' => [], 'existing' => res['existing'], 'missing' => res['missing'], 'failed' => [] })
+            return
+          end
+          tmp = Marshal.load(Marshal.dump(project))
+          ProjectStore.append_pages(tmp, res['pages'])
+          build_next(d, tmp, res, 0, [], [])
+        end
+
+        # Dựng lần lượt từng trang mới (mỗi trang 1 Job, lỗi trang nào bỏ trang đó, Hủy -> bỏ hết).
+        def build_next(d, tmp, res, i, ok, failed)
+          if i >= res['pages'].length
+            push(d, 'progress', { 'done' => true })
+            push(d, 'models_added', { 'pages' => ok, 'existing' => res['existing'], 'missing' => res['missing'], 'failed' => failed })
+            return
+          end
+          pg = tmp['pages'].find { |x| x['id'] == res['pages'][i]['id'] }
+          pb = PageBuild.new(env, tmp, pg, :svg, ->(p, n) { ProjectStore.sheet_codes(tmp, { p['id'] => n })[p['id']].first })
+          @job&.cancel!
+          job = nil
+          job = Job.new('add_model', log: ->(m) { log(m) },
+                                     on_progress: lambda { |j|
+                                       push(d, 'progress', { 'text' => "Thêm model #{i + 1}/#{res['pages'].length} – #{j.progress_text}",
+                                                             'pct' => j.progress_pct })
+                                     },
+                                     on_done: lambda do |_r|
+                                       @job = nil if @job.equal?(job)
+                                       outs = pb.outputs
+                                       if outs.empty? || outs.all? { |_, inf| Array(inf['view_keys']).empty? }
+                                         failed << { 'pid' => pg['pid'], 'name' => pg['name'], 'message' => 'không dựng được hình chiếu nào' }
+                                       else
+                                         layout = Sheet.layout_of(outs)
+                                         vp = pg['view_props'] || {}
+                                         layout.each do |k, (x, y, sh)|
+                                           vp[k] = (vp[k] || {}).merge('placement_mode' => 'auto', 'x_mm' => x, 'y_mm' => y, 'sheet' => sh)
+                                         end
+                                         pg['view_props'] = ProjectStore.clean_view_props(vp)
+                                         pg['sheet_count'] = outs.length
+                                         ok << pg
+                                       end
+                                       build_next(d, tmp, res, i + 1, ok, failed)
+                                     end,
+                                     on_error: lambda do |e|
+                                       @job = nil if @job.equal?(job)
+                                       if e.is_a?(Job::Cancelled)
+                                         push(d, 'progress', { 'done' => true })
+                                         push(d, 'saved', { 'message' => 'Đã huỷ thêm model – dự án giữ nguyên như trước.' })
+                                       else
+                                         log("add_model #{pg['name']}: #{e.class}: #{e.message}")
+                                         failed << { 'pid' => pg['pid'], 'name' => pg['name'], 'message' => e.message }
+                                         build_next(d, tmp, res, i + 1, ok, failed)
+                                       end
+                                     end)
+          pb.tasks.each { |t| job.add(t) }
+          @job = job
+          job.start
+        end
+
         def on_generate(d, arg)
           data = parse(arg)
           project = ProjectStore.clean(data['project'])
@@ -249,6 +363,7 @@ module MTDesign
           start_job(d, 'render', pb.tasks, lambda do
             outs = pb.outputs
             svg, info = outs[want.clamp(0, outs.length - 1)]
+            info['layout'] = Sheet.layout_of(outs)
             info['ms'] = ((Time.now - t0) * 1000).round
             push(d, 'page', { 'page_id' => page['id'], 'svg' => svg, 'info' => info })
           end)
@@ -261,11 +376,24 @@ module MTDesign
           on_render(d, arg)
         end
 
+        # LƯU DỰ ÁN chính thức vào dữ liệu của file SKP (kiểm tra đọc lại). Không dàn trang lại.
         def on_save(d, arg)
-          project = ProjectStore.clean(parse(arg))
+          project = ProjectStore.save(model, ProjectStore.clean(parse(arg)))
           remember(project)
-          ProjectStore.save(model, project)
-          push(d, 'saved', { 'message' => 'Đã lưu dự án vào file SketchUp (nhấn Ctrl+S trong SketchUp để ghi file SKP).' })
+          begin
+            DraftStore.clear(draft_dir, project['project_id'])
+          rescue StandardError => e
+            log("xoá bản nháp: #{e.message}")
+          end
+          skp = !model.path.to_s.empty?
+          msg = if skp
+                  'Đã lưu dự án vào dữ liệu file SKP. Nhấn Ctrl+S trong SketchUp để ghi file .skp xuống ổ đĩa.'
+                else
+                  'Đã lưu dự án vào model đang mở – NHƯNG file SketchUp chưa từng được lưu: hãy File > Save (Ctrl+S) ' \
+                    'để đặt tên và ghi file .skp, nếu không dự án sẽ mất khi đóng SketchUp.'
+                end
+          push(d, 'project_saved', { 'saved_at' => project['saved_at'], 'project_id' => project['project_id'],
+                                     'skp_saved' => skp, 'message' => msg })
         end
 
         def on_export_pdf(d, arg)
@@ -324,19 +452,26 @@ module MTDesign
           end)
         end
 
+        # XUẤT BẢN SAO .JSON: tệp dự phòng độc lập (schema + phiên bản + thời điểm), hỏi trước khi ghi đè.
         def on_save_json(d, arg)
           project = ProjectStore.clean(parse(arg))
-          path = save_file(project['name'], 'json', JSON.pretty_generate(project))
-          push(d, 'saved', { 'message' => path ? "Đã lưu #{File.basename(path)}" : 'Đã huỷ.' })
+          doc = ProjectStore.export_doc(project, 'plugin_version' => plugin_version, 'skp_path' => model.path.to_s)
+          stamp = Time.now.strftime('%Y%m%d-%H%M')
+          path = save_file("#{project['name']} - ban sao #{stamp}", 'json', JSON.pretty_generate(doc), true)
+          push(d, 'saved', { 'message' => path ? "Đã xuất bản sao #{File.basename(path)}" : 'Đã huỷ – chưa xuất bản sao.' })
         end
 
+        # MỞ DỰ ÁN từ bản sao .json: mở nguyên trạng (không dàn trang lại); model nguồn mất -> giữ trang, báo mất liên kết.
         def on_open_json(d, _arg)
           path = UI.openpanel('Mở dự án AUTO LAYOUT', folder, 'Dự án JSON|*.json||')
           return unless path
 
           project = ProjectStore.read_file(path)
-          push(d, 'project', { 'project' => project, 'status' => ModelScanner.statuses(model, project),
-                               'message' => "Đã mở #{File.basename(path)}" })
+          st = ModelScanner.statuses(model, project)
+          lost = st.count { |_, v| v != 'ok' }
+          msg = "Đã mở #{File.basename(path)} (#{project['pages'].length} trang)."
+          msg += " #{lost} trang mất liên kết với model nguồn – vẫn giữ trang." if lost.positive?
+          push(d, 'project', { 'project' => project, 'status' => st, 'message' => msg })
         end
 
         # Chọn đối tượng trong SketchUp (không sửa model) để người dùng thấy đang triển khai cái gì.
@@ -487,14 +622,20 @@ module MTDesign
           model.path.to_s.empty? ? nil : File.dirname(model.path)
         end
 
-        def save_file(title, ext, bytes)
+        def save_file(title, ext, bytes, confirm_overwrite = false)
           name = title.to_s.gsub(/[<>:"\/\\|?*\x00-\x1f]/, ' ').strip[0, 90]
           name = 'AUTO LAYOUT' if name.empty?
           path = UI.savepanel("Lưu #{ext.upcase}", folder, "#{name}.#{ext}")
           return nil unless path
 
           path += ".#{ext}" unless File.extname(path).downcase == ".#{ext}"
-          File.binwrite(path, bytes)
+          if confirm_overwrite && File.exist?(path) &&
+             UI.messagebox("Tệp #{File.basename(path)} đã có. Ghi đè?", MB_YESNO) != IDYES
+            return nil
+          end
+          tmp = "#{path}.tmp"
+          File.binwrite(tmp, bytes)
+          File.rename(tmp, path)
           path
         end
       end

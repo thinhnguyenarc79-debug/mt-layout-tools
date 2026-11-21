@@ -283,8 +283,8 @@ module MTDesign
               py = v[:pin][:y].to_f
               info['boxes'][v[:key]] = [px, py, bw, bh].map { |n| n.round(2) }
               if px < area[0] - 0.5 || py < area[1] - 0.5 || px + bw > area[2] + 0.5 || py + bh > area[3] + 0.5
-                add_note(info, "#{v[:name]} (#{v[:position_locked] ? 'khóa vị trí' : 'đặt tay'}) tràn ra ngoài vùng vẽ – " \
-                               'giữ nguyên vị trí, hãy kéo lại hoặc đổi khổ giấy/tỉ lệ.')
+                add_note(info, "#{v[:name]} (#{v[:position_locked] ? 'đã khóa' : (v[:pin][:manual] ? 'đã chỉnh tay' : 'đã chốt chỗ')}) " \
+                               'tràn ra ngoài vùng vẽ – giữ nguyên vị trí; kéo lại hoặc bấm "Dàn trang lại".')
               end
               next [v, px, py + bh - M_BOTTOM]
             end
@@ -302,26 +302,28 @@ module MTDesign
           placed
         end
 
+        # Bố cục đã dựng của 1 trang (mọi tờ): { key => [x_mm, y_mm, tờ] } – để CHỐT vị trí, lần sau không tính lại.
+        def layout_of(outs)
+          outs.each_with_index.each_with_object({}) do |((_svg, inf), i), h|
+            (inf['boxes'] || {}).each { |k, b| h[k] = [b[0].to_f.round(2), b[1].to_f.round(2), i] }
+          end
+        end
+
         def add_note(info, msg)
           info['note'] = [info['note'], msg].compact.join(' | ')
         end
 
-        # Hình tự động chồng lên hình đặt tay -> báo xung đột (không tự dời hình đặt tay).
+        # Hình chồng lên nhau (sau khi chỉnh tay / đổi tỉ lệ / thêm hình) -> báo, KHÔNG tự dời hình nào.
         def report_overlaps(placed, info)
           boxes = info['boxes']
-          pins = placed.select { |v, _, _| v[:pin] }
-          return if pins.empty?
+          return unless placed.any? { |v, _, _| v[:pin] }
 
-          placed.each do |v, _, _|
-            next if v[:pin]
-
+          placed.combination(2).each do |(v, _, _), (p, _, _)|
             a = boxes[v[:key]]
-            pins.each do |p, _, _|
-              b = boxes[p[:key]]
-              next unless a && b && a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
+            b = boxes[p[:key]]
+            next unless a && b && a[0] < b[0] + b[2] - 0.5 && b[0] < a[0] + a[2] - 0.5 && a[1] < b[1] + b[3] - 0.5 && b[1] < a[1] + a[3] - 0.5
 
-              add_note(info, "XUNG ĐỘT VỊ TRÍ: #{v[:name]} chồng lên #{p[:name]} (đặt tay) – kéo #{v[:name]} sang chỗ trống.")
-            end
+            add_note(info, "XUNG ĐỘT VỊ TRÍ: #{v[:name]} chồng lên #{p[:name]} – kéo sang chỗ trống hoặc bấm \"Dàn trang lại\".")
           end
         end
 

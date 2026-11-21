@@ -366,7 +366,8 @@ module MTDesign
             v[:fixed_scale] = (vp && vp['scale_override']) || v[:own_scale]
             v[:scale_locked] = vp ? vp['scale_locked'] == true : false
             v[:position_locked] = vp ? vp['position_locked'] == true : false
-            v[:pin] = vp && vp['placement_mode'] == 'manual' ? { x: vp['x_mm'], y: vp['y_mm'], sheet: vp['sheet'].to_i } : nil
+            # có toạ độ đã chốt (tự động hoặc chỉnh tay) -> đặt đúng chỗ đó, không tính lại bố cục
+            v[:pin] = vp && vp['x_mm'] && vp['y_mm'] ? { x: vp['x_mm'], y: vp['y_mm'], sheet: vp['sheet'].to_i, manual: vp['placement_mode'] == 'manual' } : nil
           end
         end
 

@@ -91,10 +91,10 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 .door-it { display: flex; gap: 6px; padding: 2px 0; border-bottom: 1px solid #f0eee6; }
 .door-it .why { color: #8a8f8b; font-size: 10px; margin-left: auto; }
 
-.navlbl { display: inline-block; min-width: 120px; text-align: center; color: #fff; font-weight: 600; padding: 4px 6px; }
+.navlbl { display: inline-block; min-width: 70px; text-align: center; color: #fff; font-weight: 600; padding: 4px 6px; }
 .list.pages .it .of { color: #7a817c; font-size: 10px; margin-left: 4px; }
 .list.pages .it.cur .of { color: #C9A45C; }
-#top button { white-space: nowrap; flex: none; padding: 5px 7px; }
+#top button { white-space: nowrap; flex: none; padding: 5px 6px; font-size: 12px; }
 #top .grp { flex: none; }
 .tools { scrollbar-width: thin; }
 
@@ -160,3 +160,16 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 .scansum .r .lb { flex: 1; }
 .scansum button { padding: 1px 6px; font-size: 10px; }
 .scansum .ok { color: #2e7d4f; } .scansum .sug { color: #c0772b; } .scansum .unk { color: #b3261e; }
+
+/* v2.9: trạng thái lưu, hộp thoại */
+.savest { display: inline-block; font-size: 11px; color: #d7d2c2; padding: 0 6px; white-space: nowrap; }
+.savest.unsaved { color: #f2c46d; } .savest.saved { color: #9fd3a8; } .savest.err { color: #ff9a8f; } .savest.draft { color: #b9d7f0; }
+.dlgwrap { position: fixed; inset: 0; background: rgba(20,28,24,.45); z-index: 80; display: flex; align-items: center; justify-content: center; }
+.dlgwrap[hidden] { display: none; }
+.dlg { background: #fff; border-radius: 8px; padding: 14px 16px; width: 460px; max-height: 80vh; overflow: auto; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 12px; }
+.dlg h4 { margin: 0 0 8px; font-size: 14px; color: #2f3a33; }
+.dlg .opt { display: block; margin: 4px 0; }
+.dlg .sub { margin: 2px 0 6px 20px; max-height: 160px; overflow: auto; border: 1px solid #eee; padding: 4px; }
+.dlg .warn { color: #b3261e; margin: 6px 0; }
+.dlg table { width: 100%; border-collapse: collapse; } .dlg td { padding: 2px 4px; border-bottom: 1px solid #f0eee6; }
+@media (max-width: 1560px) { #top .brand { display: none; } #top { gap: 6px; } #top .tools { gap: 6px; } }

@@ -27,13 +27,16 @@
       <button id="undo" title="Hoàn tác (Ctrl+Z)">↶</button><button id="redo" title="Làm lại (Ctrl+Y)">↷</button>
     </span>
     <span class="grp" id="nav" title="Chuyển tờ (PageUp / PageDown)">
-      <button id="shPrev">◀ Tờ trước</button><span id="shLbl" class="navlbl">–</span><button id="shNext">Tờ sau ▶</button>
+      <button id="shPrev" title="Tờ trước (PageUp)">◀</button><span id="shLbl" class="navlbl">–</span><button id="shNext" title="Tờ sau (PageDown)">▶</button>
     </span>
     <span class="grp">
-      <button id="refresh" title="Đọc lại hình học từ SketchUp và vẽ lại trang">⟳ Cập nhật</button>
+      <button id="addModels" title="Thêm các Group/Component đang chọn trong SketchUp vào cuối dự án – không đụng trang cũ">＋ Model</button>
+      <button id="refresh" title="Cập nhật model đang mở: đọc lại hình học từ SketchUp, GIỮ NGUYÊN bố cục, tỉ lệ, DIM, chú thích">⟳ Cập nhật</button>
+      <button id="relayoutBtn" title="Dàn lại vị trí hình chiếu – chỉ khi bạn chủ động chọn phạm vi">⊞ Dàn lại</button>
     </span>
     <span class="grp">
-      <button id="save" class="gold" title="Lưu dự án vào file SketchUp">💾 Lưu</button>
+      <button id="save" class="gold" title="Lưu dự án vào dữ liệu file SKP (vị trí hình, tỉ lệ, khóa, DIM, ghi chú, mặt cắt, cấu tạo, khung tên)">💾 Lưu dự án</button>
+      <span id="saveState" class="savest" title="Trạng thái lưu">–</span>
       <button id="pdfPage" title="Xuất riêng tờ đang mở ra PDF">PDF tờ</button>
       <button id="pdfAll" title="Xuất tất cả các tờ thành 1 PDF nhiều trang">PDF tất cả</button>
       <button id="svgPage" title="Xuất trang đang mở ra SVG">SVG</button>
@@ -48,7 +51,8 @@
       <div class="body">
         <label>Tên dự án</label><input id="pName" type="text">
         <label>Khổ giấy</label><select id="pPaper"></select>
-        <div class="btns"><button id="openJson">Mở .json</button><button id="saveJson">Lưu .json</button></div>
+        <div class="btns"><button id="openJson" title="Mở / khôi phục dự án từ bản sao .json (không dàn trang lại)">📂 Mở dự án .json</button><button id="saveJson" title="Tạo tệp dự phòng độc lập, chọn nơi lưu">⤴ Xuất bản sao .json</button></div>
+        <p class="hint">💾 Lưu dự án ghi vào dữ liệu của file SKP đang mở – vẫn cần Ctrl+S trong SketchUp để ghi file .skp xuống ổ đĩa. Bản nháp tự lưu sau mỗi thay đổi (không ghi đè bản chính).</p>
       </div>
     </section>
     <section data-sec="models" class="open">
@@ -61,8 +65,7 @@
           <button id="scan" title="Quét lại (chỉ đọc đối tượng đang chọn, không quét cả file)">⟳ Quét lại</button>
           <button id="mAll">Tick hết</button><button id="mNone">Bỏ tick</button>
         </div>
-        <div class="checks"><label title="Model đã có trang: dựng lại trang đó thay vì bỏ qua. Không bao giờ tạo trang trùng."><input id="replace" type="checkbox" checked> Thay thế trang cũ của model</label></div>
-        <button id="generate" class="gold wide">▶ Tự động triển khai</button>
+        <button id="generate" class="gold wide" title="Chỉ dựng model MỚI, ghép tờ mới vào cuối – trang cũ giữ nguyên 100%">▶ THÊM MODEL VÀO DỰ ÁN</button>
         <p class="hint">Chỉ hiện các Group/Component bạn đang chọn trong SketchUp (Group con bên trong được tính là bộ phận của Group cha). Tick model cần triển khai rồi bấm ▶ — mỗi model 1 tờ. Kích thước: Rộng × Cao × Sâu (mm).</p>
       </div>
     </section>
@@ -147,7 +150,7 @@
         <div><label>Trục đo</label><select id="pgIsoMode"><option value="material">Tô màu vật liệu</option><option value="mono">Nét kỹ thuật đơn sắc</option><option value="none">Không tô mặt</option></select></div>
         <div style="flex:none;align-self:flex-end"><label class="checks"><input id="pgIsoHidden" type="checkbox"> Nét khuất</label></div>
       </div>
-      <div class="btns"><button id="pgPick" title="Chọn đối tượng gốc trong SketchUp">Chọn trong SketchUp</button><button id="pgReset">Đặt lại bố cục</button></div>
+      <div class="btns"><button id="pgPick" title="Chọn đối tượng gốc trong SketchUp">Chọn trong SketchUp</button><button id="pgReset">Dàn trang lại…</button></div>
     </div>
     <h3>Cấu tạo tủ</h3>
     <div class="body" id="partBox">
@@ -198,6 +201,7 @@
   </aside>
 </div>
 <div id="ctxMenu" class="ctx" hidden></div>
+<div id="dlg" class="dlgwrap" hidden><div class="dlg"><h4 id="dlgTitle"></h4><div id="dlgBody"></div><div class="btns" id="dlgBtns"></div></div></div>
 <script src="app.js"></script>
 </body>
 </html>
