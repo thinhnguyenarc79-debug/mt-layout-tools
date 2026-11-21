@@ -58,14 +58,15 @@ module MTDesign
 
         # ---------- 2+3. thu thập hình học ----------
         # Cấu hình nhận diện cánh cho trang: chọn tay (đường dẫn instance) + Tag cánh của dự án.
+        # Cấu hình nhận diện bộ phận: vai trò gán tay theo đường dẫn instance (+ cánh chọn tay bản 2.4) và Tag cánh.
         def door_cfg
-          { manual: Array(@pg['doors']), tags: [@project['door_tag'].to_s].reject(&:empty?) }
+          { roles: (@pg['roles'] || {}), manual: Array(@pg['doors']), tags: [@project['door_tag'].to_s].reject(&:empty?) }
         end
 
         # variant :all = đủ hình học; :nodoor = đã bỏ các phần được xác định là cánh.
         def cap_key(variant = :all)
           [@pg['pid'], @pg['front'], @project['exclude_tags'].uniq.sort, door_cfg[:manual].sort, door_cfg[:tags],
-           variant.to_s].to_json
+           door_cfg[:roles].sort, variant.to_s].to_json
         end
 
         def capture_task(_variant = :all)
@@ -87,7 +88,9 @@ module MTDesign
                   @env.log("CAPTURE pid=#{@pg['pid']} '#{cap.name}': group con=#{st['groups']} " \
                            "component con=#{st['components']} face=#{st['faces']} cạnh nguồn=#{st['edges_src']} -> " \
                            "cạnh=#{st['edges']} tam giác=#{st['triangles']} definition=#{st['defs_cached']} " \
+                           "bộ phận=#{st['parts']} [#{Array(cap.parts).group_by { |pt| pt['role'] }.map { |r, l| "#{r}:#{l.length}" }.join(' ')}] " \
                            "cánh=#{st['doors']} (#{Array(cap.doors).map { |d| "#{d['name']}: #{d['reason']}" }.join('; ')}) " \
+                           "gán tay không còn hợp lệ=#{Array(st['missing_roles']).length} " \
                            "#{st['seconds']}s; nặng nhất: #{Array(st['heaviest']).join('; ')}")
                   true
                 else
@@ -121,6 +124,11 @@ module MTDesign
           @mats = cap.materials.values
           @extent = cap.stats['extent']
           @doors = Array(cap.doors)
+          @parts = Array(cap.parts)
+          @missing = Array(cap.stats['missing_roles'])
+          unless @missing.empty?
+            @notes << "#{@missing.length} bộ phận đã gán tay không còn trong model (đã xoá hoặc thay thế) – xem mục CẤU TẠO TỦ."
+          end
           list = []
           @pg['views'].each do |k|
             if k == 'open'
@@ -172,9 +180,22 @@ module MTDesign
               next false unless pr.call(job)
 
               v = pr.result
+              l, t = v[:origin]
               if variant == :all && @doors.any? && %w[front back].include?(k)
-                l, t = v[:origin]
                 v[:door_boxes] = cap.door_boxes(v[:fn]).map { |d| b = d['box']; [b[0] - l, b[1] - l, b[2] - t, b[3] - t] }
+              end
+              if %w[front open].include?(k)
+                # mốc DIM theo bộ phận đã phân loại (chỉ bộ phận còn hiện trong hình này)
+                visible = @parts.reject { |pt| variant == :nodoor && pt['role'] == 'door' }
+                sides = visible.select { |pt| pt['role'] == 'side' }
+                horiz = visible.select { |pt| %w[shelf top bottom drawer].include?(pt['role']) }
+                if !sides.empty? && !horiz.empty?
+                  xs = sides.flat_map { |pt| pt['bounds'][0].map { |x| x - l } }
+                  ys = horiz.flat_map { |pt| pt['bounds'][2].map { |z| -z - t } }
+                  v[:part_breaks] = [xs, ys]
+                end
+                handles = @parts.select { |pt| pt['role'] == 'handle' && pt['sure'] }
+                v[:handle_ys] = handles.map { |pt| -(pt['bounds'][2].sum / 2.0) - t } unless handles.empty?
               end
               st = v[:stats]
               @env.log("VIEW #{k} '#{cap.name}': tam giác=#{st['tris']} cạnh vào=#{st['edges_in']} sau lọc=#{st['edges']} " \
@@ -317,6 +338,7 @@ module MTDesign
             job.progress("#{label}: dàn trang", 99)
             @notes.unshift(@fatal) if @fatal
             @pw, @ph = Sheet.paper(@project['paper'])
+            @pg['has_detail_view'] = @views.any? { |v| v[:key] == 'open' || v[:cut] }
             sheets = Sheet.paginate(@views, @mats, @pg, @pw, @ph)
             @outputs = Array.new(sheets.length)
             @base_code = @numbering.call(@pg, sheets.length)
@@ -360,7 +382,13 @@ module MTDesign
             info['sections'] = @pg['sections']
             info['materials'] = @mats.map { |m| m['name'] }
             info['extent'] = @extent ? { 'x' => @extent[0], 'y' => @extent[1], 'z' => @extent[2] } : nil
-            info['doors'] = Array(@doors).map { |d| { 'name' => d['name'], 'reason' => d['reason'], 'path' => d['path'] } }
+            info['doors'] = Array(@doors).map { |d| { 'name' => d['name'], 'reason' => d['reason'], 'path' => d['path'], 'sure' => d['sure'] } }
+            info['parts'] = Array(@parts).first(800).map do |pt|
+              { 'path' => pt['path'], 'name' => pt['name'], 'role' => pt['role'], 'source' => pt['source'], 'sure' => pt['sure'],
+                'size' => pt['bounds'].map { |lo, hi| (hi - lo).round } }
+            end
+            info['parts_total'] = Array(@parts).length
+            info['missing_roles'] = Array(@missing)
             info['sheet'] = idx
             info['sheets'] = total
             info['code'] = no

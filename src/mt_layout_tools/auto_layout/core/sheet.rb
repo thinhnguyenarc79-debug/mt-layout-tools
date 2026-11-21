@@ -266,10 +266,18 @@ module MTDesign
             v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
             polylines(v, tf).each { |pl| cv.polyline(pl, 0.25, INK) }
             draw_cut(cv, v, tf)
+            @obstacles = []
             section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
             detail_marks(cv, v, tf, s, page['details'])
           end
-          DimensionEngine.draw(cv, v, s, ox, oy, page) if v[:dims] && page.fetch('dims', true)
+          if v[:dims] && page.fetch('dims', true)
+            obs = Array(@obstacles) + note_boxes(cv, page['notes'])
+            r = DimensionEngine.draw(cv, v, s, ox, oy, page.merge('obstacles' => obs))
+            if r['moved']
+              cv.text('DIM chi tiết: xem MẶT ĐỨNG THÁO CÁNH / MẶT CẮT', ox + vw / 2, base + 13.5, 2.0, 0, GREY)
+            end
+          end
+          @obstacles = nil
           caption(cv, v[:name], "TL 1:#{s}", ox + vw / 2, base + 6.5)
           cv.text('BẢN XEM TRƯỚC – CHƯA KHỬ ĐỦ NÉT KHUẤT', ox + vw / 2, base + 13.5, 2.2, 0, '#B3261E') if v[:level].to_i >= 3
           [ox, oy, s, v[:w], v[:h]].map { |n| n.round(4) }
@@ -495,8 +503,22 @@ module MTDesign
                 c = vertical ? [p[0] - arrow[0] * 3.0, p[1]] : [p[0], p[1] - arrow[1] * 3.0]
                 cv.circle(c, 2.2, '#FFFFFF', CUT_RED, 0.3)
                 cv.text(sec['label'], c[0], c[1], 2.6, 0, CUT_RED)
+                @obstacles&.push([c[0] - 2.4, c[1] - 2.4, c[0] + 2.4, c[1] + 2.4])
               end
             end
+          end
+        end
+
+        # Hộp chiếm chỗ (gần đúng) của chú thích để chữ DIM né.
+        def note_boxes(cv, notes)
+          Array(notes).map do |n|
+            rows = n['text'].to_s.split("\n")
+            rows = [''] if rows.empty?
+            w = rows.map { |r| cv.text_w(r, n['size'].to_f) }.max.to_f
+            h = n['size'].to_f * 1.35 * rows.length
+            x = n['x'].to_f
+            x -= w + 3.8 if %w[leader material].include?(n['type']) && n['x'].to_f < n['tx'].to_f
+            [x - 0.5, n['y'].to_f - n['size'].to_f, x + w + 4.5, n['y'].to_f + h]
           end
         end
 

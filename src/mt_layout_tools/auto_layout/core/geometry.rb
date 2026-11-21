@@ -48,8 +48,11 @@ module MTDesign
 
         # edges: [[p, q]], triangles: [[a, b, c, mat_key]], materials: {key => {name, color}}, stats: Hash
         # edge_door / tri_door: mã cánh (chỉ số trong doors) của từng cạnh/tam giác, nil = không thuộc cánh.
-        Capture = Struct.new(:name, :edges, :triangles, :materials, :stats, :edge_door, :tri_door, :doors) do
-          def initialize(name, edges, triangles, materials, stats = {}, edge_door = nil, tri_door = nil, doors = [])
+        # parts: bộ phận tủ [{id, path, name, role, source, sure, bounds}]; edge_part / tri_part: mã bộ phận từng phần tử.
+        Capture = Struct.new(:name, :edges, :triangles, :materials, :stats, :edge_door, :tri_door, :doors,
+                             :parts, :edge_part, :tri_part) do
+          def initialize(name, edges, triangles, materials, stats = {}, edge_door = nil, tri_door = nil, doors = [],
+                         parts = [], edge_part = nil, tri_part = nil)
             super
           end
 
@@ -63,7 +66,7 @@ module MTDesign
             t = []
             edges.each_with_index { |x, i| e << x if edge_door.nil? || edge_door[i].nil? }
             triangles.each_with_index { |x, i| t << x if tri_door.nil? || tri_door[i].nil? }
-            Capture.new(name, e, t, materials, stats.merge('without_doors' => true), nil, nil, [])
+            Capture.new(name, e, t, materials, stats.merge('without_doors' => true), nil, nil, [], parts)
           end
 
           # Hộp bao từng cánh theo 1 phép chiếu (toạ độ hình chiếu trước khi trừ gốc).

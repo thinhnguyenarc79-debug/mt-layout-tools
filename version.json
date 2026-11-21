@@ -1,7 +1,7 @@
 {
-  "version": "2.4.1",
+  "version": "2.5.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "1da786190391a5d1762b702e244956e5f27d9d1d434b8a0b9c196b7ee92ff2b0",
-  "notes": "Mỗi tờ giấy thật là 1 dòng ở mục TRANG GIẤY, mã riêng A-01, A-02… (khung tên ghi thêm Tờ 1/n); đổi tỉ lệ cập nhật ngay danh sách và đánh lại mã, về 1:40 không thừa tờ; nút Tờ trước/Tờ sau trên thanh công cụ (PageUp/PageDown); PDF tờ này / PDF tất cả đủ số tờ; chú thích gắn theo từng tờ."
+  "sha256": "4ef194a20567038aee48dfe3304c0df3f0e05e1098bf45cbde20f32f60440b05",
+  "notes": "AUTO LAYOUT PRO v2.5.0: nhận diện bộ phận tủ (gán tay > thuộc tính > Tag > tên > vật liệu > hình học-đề xuất), mục CẤU TẠO TỦ (gán/tô sáng), DIM tháo cánh theo bộ phận, chữ DIM né ký hiệu/chú thích, kéo từng số DIM, chuyển DIM chi tiết khi quá dày"
 }

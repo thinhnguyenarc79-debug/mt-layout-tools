@@ -175,7 +175,7 @@ class TestDoorDetect < Minitest::Test
     path = "#{cum_i.persistent_id}/#{canh.persistent_id}"
     cap = ex.capture(model, root, [], '-Y', nil, { manual: [path] })
     assert_equal 1, cap.doors.length
-    assert_equal 'chọn tay', cap.doors[0]['reason']
+    assert_equal 'gán tay', cap.doors[0]['reason']
     door_z = cap.edges.each_with_index.select { |_, i| cap.edge_door[i] }.map { |(a, _), _| a[2].round }
     assert_equal [0], door_z, 'chỉ tấm trong cụm cánh được gắn là cánh'
     assert_equal 1, cap.without_doors.edges.length, 'vách (cùng definition) vẫn còn khi tháo cánh'

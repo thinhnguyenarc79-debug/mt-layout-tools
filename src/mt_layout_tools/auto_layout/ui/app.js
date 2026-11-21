@@ -41,6 +41,12 @@
         if (d.done) { busy(false); return; }
         busy(true); $('busyText').textContent = d.text || 'Đang xử lý…';
         $('busyPct').textContent = d.pct ? d.pct + '%' : ''; $('busyBar').style.width = (d.pct || 0) + '%';
+      } else if (kind === 'assigned') {
+        var pa = page(); if (!pa || pa.pid !== d.pid) return;
+        snapshot(); pa.roles = pa.roles || {};
+        d.paths.forEach(function (x) { pa.roles[x] = d.role; });
+        changed(); requestRender(true);
+        msg('Đã gán ' + d.paths.length + ' bộ phận là "' + ROLES[d.role] + '": ' + d.names.join(', '), 'ok');
       } else if (kind === 'doors') {
         var pd = page();
         if (!pd || pd.pid !== d.pid) return;
@@ -233,15 +239,52 @@
     $('shPrev').disabled = i <= 0; $('shNext').disabled = i < 0 || i >= rows.length - 1;
   }
 
-  // ---------------- cánh tủ ----------------
-  function renderDoors() {
-    var p = page(), box = $('doorList'); if (!p) { box.innerHTML = ''; return; }
-    var ds = (S.info && S.info.doors) || [];
-    box.innerHTML = ds.length ? '<label>Đã xác định ' + ds.length + ' cánh</label>' + ds.map(function (d) {
-      return '<div class="door-it"><span>' + esc(d.name || 'Cánh') + '</span><span class="why">' + esc(d.reason) + '</span></div>';
-    }).join('') : '<p class="hint" style="color:#8a5a12">Chưa xác định được cánh: mặt đứng chính chỉ ghi kích thước ngoài và không tạo hình tháo cánh. ' +
-      'Bấm đúp mở Group tủ trong SketchUp, chọn các cánh, rồi bấm nút dưới.</p>';
+  // ---------------- cấu tạo tủ ----------------
+  var ROLES = { door: 'Cánh', side: 'Vách đứng', shelf: 'Đợt', top: 'Nóc', bottom: 'Đáy', back: 'Hậu', drawer: 'Ngăn kéo',
+                handle: 'Tay nắm', glass: 'Kính/gương', accessory: 'Phụ kiện', unknown: 'Chưa xác định' };
+  function roleOpts(sel, withAuto) {
+    return (withAuto ? '<option value="">(tự nhận)</option>' : '') + Object.keys(ROLES).map(function (k) {
+      return '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>' + ROLES[k] + '</option>';
+    }).join('');
   }
+  function renderDoors() { renderParts(); } // tương thích
+  function renderParts() {
+    var p = page(); if (!p) { $('partList').innerHTML = ''; $('partCounts').innerHTML = ''; return; }
+    if (!$('assignRole').options.length) $('assignRole').innerHTML = roleOpts('door', false);
+    var parts = (S.info && S.info.parts) || [], roles = p.roles || {}, cnt = {};
+    parts.forEach(function (pt) { cnt[pt.role] = (cnt[pt.role] || 0) + 1; });
+    $('partCounts').innerHTML = Object.keys(ROLES).filter(function (k) { return cnt[k]; }).map(function (k) {
+      return '<span class="' + (k === 'unknown' ? 'u' : '') + '">' + ROLES[k] + ': ' + cnt[k] + '</span>';
+    }).join('') + ((S.info && S.info.missing_roles && S.info.missing_roles.length) ? '<span class="u">⚠ ' + S.info.missing_roles.length + ' gán tay đã mất</span>' : '');
+    var q = $('partSearch').value.trim().toLowerCase();
+    var list = parts.filter(function (pt) { return !q || (pt.name + ' ' + ROLES[pt.role]).toLowerCase().indexOf(q) >= 0; });
+    $('partList').innerHTML = list.length ? list.slice(0, 300).map(function (pt) {
+      var manual = roles[pt.path];
+      return '<div class="it" data-path="' + esc(pt.path) + '"><span class="nm" title="' + esc(pt.source + ' · ' + pt.size.join('×') + ' mm') + '">' + esc(pt.name) +
+        ' <span class="src' + (pt.sure ? '' : ' sug') + '">' + (manual ? 'gán tay' : (pt.sure ? '✓' : 'đề xuất')) + '</span></span>' +
+        '<select class="role">' + roleOpts(manual || '', true).replace('value="' + (manual || pt.role) + '"', 'value="' + (manual || pt.role) + '" data-cur="1"') + '</select>' +
+        '<button class="hl" title="Chọn trong SketchUp">👁</button></div>';
+    }).join('') + (list.length > 300 ? '<div class="empty">… lọc để xem thêm (' + list.length + ')</div>' : '')
+      : '<div class="empty">' + (S.info ? 'Chưa có bộ phận (dựng trang trước).' : '') + '</div>';
+    // hiển thị vai trò hiện tại (tự nhận) trong nhãn của lựa chọn "(tự nhận)"
+    $('partList').querySelectorAll('.it').forEach(function (row) {
+      var pt = parts.filter(function (x) { return x.path === row.dataset.path; })[0];
+      var o = row.querySelector('option[value=""]'); if (o && pt) o.textContent = '(tự nhận: ' + ROLES[pt.role] + ')';
+    });
+  }
+  $('partSearch').oninput = renderParts;
+  $('partList').addEventListener('change', function (e) {
+    if (!e.target.classList.contains('role')) return;
+    var p = page(), path = e.target.closest('.it').dataset.path;
+    snapshot(); p.roles = p.roles || {};
+    if (e.target.value) p.roles[path] = e.target.value; else delete p.roles[path];
+    changed(); msg('Đã gán. Bấm 💾 Lưu để ghi vào file SketchUp.', 'ok');
+  });
+  $('partList').addEventListener('click', function (e) {
+    if (!e.target.classList.contains('hl')) return;
+    var p = page(); call('highlight_part', { pid: p.pid, path: e.target.closest('.it').dataset.path });
+  });
+  $('assignBtn').onclick = function () { var p = page(); if (p) call('assign_parts', { pid: p.pid, role: $('assignRole').value }); };
 
   // ---------------- mặt cắt ----------------
   var AXIS = { x: 'Cắt đứng theo chiều rộng (X)', z: 'Cắt ngang theo cao độ (Z)', y: 'Cắt song song mặt trước (Y)' };
@@ -674,12 +717,7 @@
   $('cancel').onclick = function () { call('cancel', null); };
   $('shPrev').onclick = function () { gotoRow(curRowIndex(sheetRows()) - 1); };
   $('shNext').onclick = function () { gotoRow(curRowIndex(sheetRows()) + 1); };
-  $('pickDoors').onclick = function () { var p = page(); if (p) call('pick_doors', String(p.pid)); };
-  $('clearDoors').onclick = function () {
-    var p = page(); if (!p || !(p.doors || []).length) return;
-    if (!window.confirm('Bỏ ' + p.doors.length + ' cánh đã chọn tay của trang này?')) return;
-    snapshot(); p.doors = []; changed();
-  };
+
   $('refresh').onclick = function () { if (!S.cur) return; busy(true); call('refresh', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 }); };
   $('save').onclick = save;
   $('pdfPage').onclick = function () { if (S.cur) call('export_pdf', { project: S.project, page_ids: [S.cur], sheet: S.sheet || 0 }); };

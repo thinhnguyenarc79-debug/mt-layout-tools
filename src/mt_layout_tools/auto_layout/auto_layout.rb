@@ -5,7 +5,7 @@ require 'tmpdir'
 require_relative 'core/pdf'
 require_relative 'core/job'
 require_relative 'core/geometry'
-require_relative 'core/door_detector'
+require_relative 'core/part_classifier'
 require_relative 'core/extractor'
 require_relative 'core/canvas'
 require_relative 'core/dimension_engine'
@@ -45,7 +45,8 @@ module MTDesign
             'ready' => :on_ready, 'scan' => :on_scan, 'generate' => :on_generate, 'render' => :on_render,
             'refresh' => :on_refresh, 'save' => :on_save, 'export_pdf' => :on_export_pdf,
             'export_svg' => :on_export_svg, 'save_json' => :on_save_json, 'open_json' => :on_open_json,
-            'pick' => :on_pick, 'cancel' => :on_cancel, 'pick_doors' => :on_pick_doors
+            'pick' => :on_pick, 'cancel' => :on_cancel, 'pick_doors' => :on_pick_doors,
+            'assign_parts' => :on_assign_parts, 'highlight_part' => :on_highlight_part
           }.each do |name, handler|
             d.add_action_callback(name) do |_ctx, arg|
               guard(d, name) { send(handler, d, arg) }
@@ -348,6 +349,44 @@ module MTDesign
           paths = sel.map { |e| (prefix + [e.persistent_id]).join('/') }
           names = sel.map { |e| Geometry.instance_name(e) }
           push(d, 'doors', { 'pid' => root_pid, 'paths' => paths, 'names' => names })
+        end
+
+        # Gán cấu tạo: người dùng mở Group tủ, chọn 1 hoặc nhiều bộ phận rồi bấm "Gán" -> trả đường dẫn instance.
+        def on_assign_parts(d, arg)
+          data = parse(arg)
+          root_pid = data['pid'].to_i
+          path = model.active_path || []
+          idx = path.index { |e| e.persistent_id == root_pid }
+          raise ArgumentError, 'Hãy bấm đúp mở Group tủ của trang này, chọn các bộ phận bên trong rồi bấm "Gán".' if idx.nil?
+
+          sel = model.selection.select { |e| ModelScanner.model_like?(e) }
+          raise ArgumentError, 'Chưa chọn Group/Component bộ phận nào.' if sel.empty?
+
+          prefix = path[(idx + 1)..-1].map(&:persistent_id)
+          paths = sel.map { |e| (prefix + [e.persistent_id]).join('/') }
+          push(d, 'assigned', { 'pid' => root_pid, 'paths' => paths, 'role' => data['role'].to_s,
+                                'names' => sel.map { |e| Geometry.instance_name(e) } })
+        end
+
+        # Tô sáng 1 bộ phận: mở đúng ngữ cảnh (active_path) và CHỌN nó – không đổi vật liệu, Tag hay hình học.
+        def on_highlight_part(d, arg)
+          data = parse(arg)
+          root = ModelScanner.find(model, data['pid'])
+          raise ArgumentError, 'Không tìm thấy Group tủ.' unless root
+
+          chain = data['path'].to_s.split('/').map { |x| model.find_entity_by_persistent_id(x.to_i) }
+          raise ArgumentError, 'Bộ phận không còn trong model (đã xoá hoặc thay thế).' if chain.empty? || chain.any?(&:nil?)
+
+          target = chain.last
+          begin
+            model.active_path = [root] + chain[0..-2]
+          rescue StandardError => e
+            log("highlight active_path: #{e.message}")
+          end
+          model.selection.clear
+          model.selection.add(target)
+          model.active_view.zoom(target)
+          push(d, 'saved', { 'message' => "Đang chọn trong SketchUp: #{Geometry.instance_name(target)}" })
         end
 
         def folder

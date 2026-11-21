@@ -59,6 +59,7 @@ tools/build_rbz.py                        đóng gói + version.json
 | Chi tiết phóng to (khoanh vùng trên hình chiếu/mặt cắt, tỉ lệ riêng, DIM, hatch) | ✅ v2.3 |
 | Phân biệt DIM có cánh / tháo cánh: nhận diện cánh (chọn tay theo đường dẫn instance, thuộc tính, Tag, tên); bộ DIM Exterior/Door/Interior/Section; chống chồng chữ; kéo hàng DIM | ✅ v2.4 |
 | Giữ đúng tỉ lệ đã chọn: tự chia nhiều tờ; mỗi tờ là 1 dòng ở TRANG GIẤY với mã riêng A-01, A-02…, nút Tờ trước/Tờ sau, PDF tờ / PDF tất cả | ✅ v2.4.1 |
+| Nhận diện cấu tạo tủ (gán tay > thuộc tính > Tag > tên > vật liệu kính > hình học-đề xuất); mục CẤU TẠO TỦ: đếm, gán vai trò, tô sáng bộ phận; DIM tháo cánh theo vách/đợt; chữ DIM né ký hiệu/chú thích; kéo từng số DIM; chuyển DIM chi tiết khi quá dày | ✅ v2.5.0 |
 | Job Engine máy trạng thái (không Fiber/Thread) | ✅ v2.3.1 |
 | Model lớn: cache definition, lưới không gian, 3 mức dự phòng, tiến trình + Huỷ, log | ✅ v2.1 |
 | Nét đứt cho cạnh khuất, phân cấp nét bao/cấu tạo, đường trục | ⏳ Giai đoạn 2 |

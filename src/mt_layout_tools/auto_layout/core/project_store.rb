@@ -87,7 +87,11 @@ module MTDesign
             'details' => DetailEngine.clean(pg['details']),
             'hidden_layers' => Array(pg['hidden_layers']).map { |x| str(x, 60) }.uniq.first(50),
             # Cánh chọn tay: đường dẫn persistent_id từ Group cha xuống instance cánh, vd "812/905".
-            'doors' => Array(pg['doors']).map(&:to_s).select { |x| x =~ %r{\A\d+(/\d+){0,30}\z} }.uniq.first(500),
+            'doors' => [], # bản 2.4: đã chuyển sang 'roles' (cánh) – không giữ riêng nữa
+            # vai trò bộ phận gán tay: { "pid/pid" => "door"|"side"|... }
+            'roles' => clean_roles(pg['roles'], pg['doors']),
+            # dịch tay từng số DIM: { "view|tier|n|i" => [dx, dy] } mm giấy
+            'dimtext' => clean_dimtext(pg['dimtext']),
             'front_dims' => %w[auto exterior interior].include?(pg['front_dims'].to_s) ? pg['front_dims'].to_s : 'auto',
             'dimoff' => clean_dimoff(pg['dimoff']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
@@ -159,6 +163,29 @@ module MTDesign
           n = project['pages'].length + 1
           n += 1 while used.include?(format('A-%02d', n))
           format('A-%02d', n)
+        end
+
+        def clean_roles(raw, legacy_doors = nil)
+          out = {}
+          Array(legacy_doors).each { |pth| out[pth.to_s] = 'door' if pth.to_s =~ %r{\A\d+(/\d+){0,30}\z} } # chuyển từ bản 2.4
+          return out unless raw.is_a?(Hash)
+
+          raw.first(2000).each do |k, v|
+            next unless k.to_s =~ %r{\A\d+(/\d+){0,30}\z} && PartClassifier::ROLES.key?(v.to_s)
+
+            out[k.to_s] = v.to_s
+          end
+          out
+        end
+
+        def clean_dimtext(raw)
+          return {} unless raw.is_a?(Hash)
+
+          raw.first(500).each_with_object({}) do |(k, v), h|
+            next unless k.to_s.length <= 60 && v.is_a?(Array) && v.length == 2
+
+            h[k.to_s] = v.map { |n| n.to_f.clamp(-80, 80).round(2) }
+          end
         end
 
         # Dịch chuyển tay các hàng DIM: { view_key => { 'top'|'left'|'right' => mm giấy } }.

@@ -58,8 +58,14 @@ module MTDesign
             case mode
             when :door then door_breaks(view, gap)
             when :interior, :section
-              [breaks(view[:lines], 0, view[:w], [view[:h] * 0.3, 150.0].min, gap),
-               breaks(view[:lines], 1, view[:h], [view[:w] * 0.3, 150.0].min, gap)]
+              if view[:part_breaks]
+                # mốc lấy từ bộ phận đã phân loại (vách, đợt, nóc, đáy, ngăn kéo) – không lẫn nét trang trí/tay nắm
+                xs, ys = view[:part_breaks]
+                [merge([0.0, view[:w]] + xs, view[:w], gap), merge([0.0, view[:h]] + ys, view[:h], gap)]
+              else
+                [breaks(view[:lines], 0, view[:w], [view[:h] * 0.3, 150.0].min, gap),
+                 breaks(view[:lines], 1, view[:h], [view[:w] * 0.3, 150.0].min, gap)]
+              end
             else [[0.0, view[:w].to_f], [0.0, view[:h].to_f]]
             end
         end
@@ -71,7 +77,7 @@ module MTDesign
           return [[0.0, view[:w].to_f], [0.0, view[:h].to_f]] if boxes.empty?
 
           xs = [0.0, view[:w]] + boxes.flat_map { |b| [b[0], b[1]] }
-          ys = [0.0, view[:h]] + boxes.flat_map { |b| [b[2], b[3]] }
+          ys = [0.0, view[:h]] + boxes.flat_map { |b| [b[2], b[3]] } + Array(view[:handle_ys]) # tay nắm đã xác nhận
           [merge(xs, view[:w], gap, 1.0), merge(ys, view[:h], gap, 1.0)]
         end
 
@@ -95,13 +101,28 @@ module MTDesign
           left = off['left'].to_f
           right = off['right'].to_f
           xs, ys = view_breaks(view, opts.fetch('min_gap', 0))
-          placed = []
+          # Quá dày (nhiều khoảng hẹp) trên mặt đứng chính -> chỉ giữ kích thước tổng, chi tiết xem hình tháo cánh/mặt cắt
+          moved = false
+          if view[:key] == 'front' && opts['has_detail_view']
+            dense = lambda do |arr|
+              n = arr.each_cons(2).count { |a, b| (b - a) / s < 3.0 }
+              n >= 4 && n >= 0.4 * (arr.length - 1)
+            end
+            if dense.call(xs) || dense.call(ys)
+              xs = [0.0, w]
+              ys = [0.0, h]
+              moved = true
+            end
+          end
+          placed = Array(opts['obstacles']).map(&:dup) # ký hiệu mặt cắt, chú thích... chữ DIM không được đè
+          @txt_off = opts['dimtext'] || {}
+          @txt_key = view[:key].to_s
           cv.group('class' => 'dimset', 'data-key' => view[:key], 'data-side' => 'top') do
             if xs.length > 2
-              horizontal(cv, xs, s, ox, oy, oy - TIER1 + top, rnd, placed)
-              horizontal(cv, [0, w], s, ox, oy, oy - TIER2 + top, rnd, placed)
+              horizontal(cv, xs, s, ox, oy, oy - TIER1 + top, rnd, placed, 't1')
+              horizontal(cv, [0, w], s, ox, oy, oy - TIER2 + top, rnd, placed, 't2')
             else
-              horizontal(cv, [0, w], s, ox, oy, oy - TIER1 + top, rnd, placed)
+              horizontal(cv, [0, w], s, ox, oy, oy - TIER1 + top, rnd, placed, 't1')
             end
           end
           cv.group('class' => 'dimset', 'data-key' => view[:key], 'data-side' => 'left') do
@@ -112,7 +133,7 @@ module MTDesign
               vertical(cv, ys, s, oy, ox + w / s, ox + w / s + TIER1 + 0.5 + right, rnd, placed)
             end
           end
-          { 'x' => xs, 'y' => ys, 'mode' => mode.to_s }
+          { 'x' => xs, 'y' => ys, 'mode' => mode.to_s, 'moved' => moved }
         end
 
         def tick(cv, x, y)
@@ -120,7 +141,7 @@ module MTDesign
         end
 
         # Đặt chữ không đè chữ đã đặt: thử lần lượt các vị trí ứng viên. placed: [[x0, y0, x1, y1]].
-        def place_text(cv, val, candidates, size, angle, placed)
+        def place_text(cv, val, candidates, size, angle, placed, tid = nil)
           tw = cv.text_w(val, size)
           boxes = candidates.map do |cx, cy|
             if angle.zero?
@@ -130,16 +151,26 @@ module MTDesign
             end
           end
           k = boxes.index { |b| placed.none? { |p| b[0] < p[2] && p[0] < b[2] && b[1] < p[3] && p[1] < b[3] } } || 0
-          placed << boxes[k]
-          cv.text(val, candidates[k][0], candidates[k][1], size, angle, COLOR)
-          boxes[k]
+          dx, dy = tid && @txt_off ? Array(@txt_off["#{@txt_key}|#{tid}"]).map(&:to_f) : []
+          dx ||= 0.0
+          dy ||= 0.0
+          box = [boxes[k][0] + dx, boxes[k][1] + dy, boxes[k][2] + dx, boxes[k][3] + dy]
+          placed << box
+          if tid
+            cv.group('class' => 'dimtxt', 'data-id' => "#{@txt_key}|#{tid}") do
+              cv.text(val, candidates[k][0] + dx, candidates[k][1] + dy, size, angle, COLOR)
+            end
+          else
+            cv.text(val, candidates[k][0] + dx, candidates[k][1] + dy, size, angle, COLOR)
+          end
+          box
         end
 
-        def horizontal(cv, xs, s, ox, y_obj, y_dim, rnd, placed = [])
+        def horizontal(cv, xs, s, ox, y_obj, y_dim, rnd, placed = [], tier = 't1')
           xs.each { |u| cv.line([ox + u / s, y_obj - 1.0], [ox + u / s, y_dim - 1.5], 0.13, COLOR) }
           cv.line([ox + xs.first / s, y_dim], [ox + xs.last / s, y_dim], 0.13, COLOR)
           xs.each { |u| tick(cv, ox + u / s, y_dim) }
-          xs.each_cons(2) do |a, b|
+          xs.each_cons(2).with_index do |(a, b), i|
             val = label(b - a, rnd)
             small = (b - a) / s < cv.text_w(val, TXT) + 0.8
             size = small ? TXT * 0.85 : TXT
@@ -147,9 +178,14 @@ module MTDesign
             cands = if small
                       [[cx, y_dim + 2.4], [cx, y_dim - 1.5], [cx, y_dim + 4.6], [cx, y_dim - 3.8]]
                     else
-                      [[cx, y_dim - 1.5], [cx, y_dim + 2.4], [cx, y_dim - 3.8]]
+                      tw = cv.text_w(val, size)
+                      # dọc theo đường DIM (trong phạm vi đoạn đo) rồi mới lên/xuống
+                      half = (b - a) / s / 2 - tw / 2 - 0.5
+                      shifts = [1, 2, 3, 4].map { |k| k * (tw + 2) }.select { |d| d <= half }
+                      [[cx, y_dim - 1.5]] + shifts.flat_map { |d| [[cx - d, y_dim - 1.5], [cx + d, y_dim - 1.5]] } +
+                        [[cx, y_dim + 2.4], [cx, y_dim - 3.8]]
                     end
-            place_text(cv, val, cands, size, 0, placed)
+            place_text(cv, val, cands, size, 0, placed, "#{tier}|#{xs.length}|#{i}")
           end
         end
 
@@ -162,14 +198,16 @@ module MTDesign
           cv.line([x_dim, oy + ys.first / s], [x_dim, oy + ys.last / s], 0.13, COLOR)
           ys.each { |v| tick(cv, x_dim, oy + v / s) }
           out = right ? 1 : -1
-          ys.each_cons(2) do |a, b|
+          side = right ? 'r' : 'l'
+          ys.each_cons(2).with_index do |(a, b), i|
             val = label(b - a, rnd)
             small = (b - a) / s < cv.text_w(val, TXT) + 0.8
             cy = oy + (a + b) / 2 / s
+            tid = "#{side}|#{ys.length}|#{i}"
             if small
-              place_text(cv, val, [[x_dim + out * 3.2, cy], [x_dim + out * 6.0, cy], [x_dim - out * 2.6, cy]], TXT * 0.85, 0, placed)
+              place_text(cv, val, [[x_dim + out * 3.2, cy], [x_dim + out * 6.0, cy], [x_dim - out * 2.6, cy]], TXT * 0.85, 0, placed, tid)
             else
-              place_text(cv, val, [[x_dim - 1.5, cy], [x_dim + 1.7, cy]], TXT, 90, placed)
+              place_text(cv, val, [[x_dim - 1.5, cy], [x_dim + 1.7, cy]], TXT, 90, placed, tid)
             end
           end
         end

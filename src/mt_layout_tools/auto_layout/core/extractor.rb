@@ -91,7 +91,7 @@ module MTDesign
             case e
             when Sketchup::Group, Sketchup::ComponentInstance
               info = { name: e.name.to_s, def_name: e.definition.name.to_s, tag: @ex.tag_of(e),
-                       attr: DoorDetector.attribute_says_door?(e) }
+                       attr: PartClassifier.attribute_role(e) }
               data.kids << [e.transformation.to_a, @ex.material_key(e.material), e.definition, @ex.tag_of(e),
                             e.is_a?(Sketchup::Group) ? :group : :component, e.persistent_id, info]
             when Sketchup::Edge
@@ -188,13 +188,21 @@ module MTDesign
                                          { 'groups' => 0, 'components' => 0, 'faces' => 0, 'edges_src' => 0 })
             @skip = exclude.map(&:to_s) | model.layers.reject(&:visible?).map(&:name)
             @heavy = Hash.new(0)
-            @manual = Array(doors[:manual] || doors['manual']).map(&:to_s)
+            # cấu hình nhận diện: roles {đường dẫn => vai trò gán tay}, manual (cánh chọn tay – bản 2.4), tags (Tag cánh)
+            @roles = (doors[:roles] || doors['roles'] || {}).transform_keys(&:to_s)
+            Array(doors[:manual] || doors['manual']).each { |pth| @roles[pth.to_s] ||= 'door' }
             @door_tags = Array(doors[:tags] || doors['tags']).map(&:to_s).reject(&:empty?)
+            @seen_paths = {}
             @cap.edge_door = []
             @cap.tri_door = []
             @cap.doors = []
-            # khung: [definition, ma trận, vật liệu thừa kế, độ sâu, đường dẫn pid, mã cánh|nil]
-            @stack = [[inst.definition, ex.root_matrix(world, front), ex.material_key(inst.material), 0, '', nil]]
+            @cap.parts = []
+            @cap.edge_part = []
+            @cap.tri_part = []
+            @part_mats = []
+            # khung: [definition, ma trận, vật liệu thừa kế, độ sâu, đường dẫn pid, bộ phận (vai trò rõ, kế thừa)|nil, tên]
+            @stack = [[inst.definition, ex.root_matrix(world, front), ex.material_key(inst.material), 0, '', nil,
+                       Geometry.instance_name(inst)]]
             @visited = 0
             @mins = [Float::INFINITY] * 3
             @maxs = [-Float::INFINITY] * 3
@@ -207,7 +215,7 @@ module MTDesign
               when :next
                 return finish if @stack.empty?
 
-                @defn, @m, @inherit, @depth, @path, @door = @stack.pop
+                @defn, @m, @inherit, @depth, @path, @door, @fname = @stack.pop
                 raise ArgumentError, 'Lồng nhóm quá 60 cấp (có thể tự tham chiếu).' if @depth > 60
 
                 if (@data = @ex.cached(@defn))
@@ -241,12 +249,73 @@ module MTDesign
 
           private
 
+          def new_part(path, name, role, source)
+            id = @cap.parts.length
+            @cap.parts << { 'id' => id, 'path' => path, 'name' => name.to_s.empty? ? 'Bộ phận' : name.to_s,
+                            'role' => role, 'source' => source, 'sure' => !role.nil?,
+                            'bounds' => [[Float::INFINITY, -Float::INFINITY], [Float::INFINITY, -Float::INFINITY],
+                                         [Float::INFINITY, -Float::INFINITY]] }
+            @part_mats << Hash.new(0)
+            id
+          end
+
+          def grow(pid, a, b)
+            return unless pid
+
+            bb = @cap.parts[pid]['bounds']
+            3.times do |k|
+              lo, hi = a[k] < b[k] ? [a[k], b[k]] : [b[k], a[k]]
+              bb[k][0] = lo if lo < bb[k][0]
+              bb[k][1] = hi if hi > bb[k][1]
+            end
+          end
+
+          # Bộ phận chưa có vai trò rõ -> đề xuất theo vật liệu/hình học (sure = false: cần người dùng xác nhận).
+          # Sau đó lập bảng cánh (edge_door/tri_door) cho hình tháo cánh và DIM cánh.
+          def classify_parts
+            @cap.parts.each { |pt| pt['bounds'] = pt['bounds'].map { |lo, hi| [lo.round(1), hi.round(1)] } }
+            # Khung thân tủ: chỉ tính các bộ phận lớn (>= 300 mm) để tay nắm, phụ kiện nhô ra không làm lệch mặt trước.
+            big = @cap.parts.select { |pt| pt['bounds'].all? { |lo, hi| lo.finite? && hi.finite? } && pt['bounds'].map { |lo, hi| hi - lo }.max >= 300 }
+            ext = if big.empty?
+                    (0..2).map { |k| [@mins[k], @maxs[k]] }
+                  else
+                    (0..2).map { |k| [big.map { |pt| pt['bounds'][k][0] }.min, big.map { |pt| pt['bounds'][k][1] }.max] }
+                  end
+            @cap.parts.each_with_index do |pt, i|
+              next if pt['role']
+
+              mkey = @part_mats[i].max_by { |_, n| n }&.first
+              mname = mkey && @cap.materials[mkey] ? @cap.materials[mkey]['name'] : nil
+              valid = pt['bounds'].all? { |lo, hi| lo.finite? && hi.finite? }
+              role, why = valid ? PartClassifier.geometric(pt['bounds'], ext, mname) : ['unknown', 'không có cạnh']
+              pt['role'] = role
+              pt['source'] = role == 'glass' ? why : "hình học: #{why}"
+              pt['sure'] = false
+            end
+            door_idx = {}
+            @cap.parts.each do |pt|
+              next unless pt['role'] == 'door'
+
+              door_idx[pt['id']] = @cap.doors.length
+              @cap.doors << { 'id' => @cap.doors.length, 'part' => pt['id'], 'path' => pt['path'], 'name' => pt['name'],
+                              'reason' => pt['source'], 'sure' => pt['sure'] }
+            end
+            @cap.edge_door = @cap.edge_part.map { |p| p && door_idx[p] }
+            @cap.tri_door = @cap.tri_part.map { |p| p && door_idx[p] }
+          end
+
           def begin_expand
             @visited += 1
             @cap.stats['faces'] += @data.faces
             @cap.stats['edges_src'] += @data.edges
             @heavy[@data.name] += @data.tris
             @parts = @data.parts.reject { |tag, _| @skip.include?(tag) }.values
+            # Bộ phận của hình học trực tiếp trong khung này: kế thừa bộ phận có vai trò rõ của cha,
+            # nếu không thì là 1 bộ phận riêng (vai trò sẽ đề xuất theo hình học khi đọc xong).
+            @part = @door
+            if @part.nil? && @parts.any? { |pt| !pt[:edges].empty? || !pt[:tris].empty? }
+              @part = new_part(@path, @path.empty? ? "#{@fname} (hình trực tiếp)" : @fname, nil, nil)
+            end
             @pi = 0
             @ei = 0
             @ti = 0
@@ -271,7 +340,8 @@ module MTDesign
                   @maxs[k] = hi if hi > @maxs[k]
                 end
                 @cap.edges << [a, b]
-                @cap.edge_door << @door
+                @cap.edge_part << @part
+                grow(@part, a, b)
               end
               tris = pt[:tris]
               while @ti < tris.length
@@ -281,7 +351,8 @@ module MTDesign
                 @ti += 1
                 @cap.triangles << [@ex.apply(m, tr[0], tr[1], tr[2]), @ex.apply(m, tr[3], tr[4], tr[5]),
                                    @ex.apply(m, tr[6], tr[7], tr[8]), tr[9] || @inherit]
-                @cap.tri_door << @door
+                @cap.tri_part << @part
+                @part_mats[@part][tr[9] || @inherit] += 1 if @part
               end
               @pi += 1
               @ei = 0
@@ -296,16 +367,17 @@ module MTDesign
 
               kind == :group ? @cap.stats['groups'] += 1 : @cap.stats['components'] += 1
               path = @path.empty? ? pid.to_s : "#{@path}/#{pid}"
-              door = @door
-              if door.nil? && info
-                why = DoorDetector.reason(info, path, @manual, @door_tags)
-                if why
-                  door = @cap.doors.length
-                  @cap.doors << { 'id' => door, 'path' => path, 'name' => info[:name].empty? ? info[:def_name] : info[:name],
-                                  'reason' => why }
-                end
+              @seen_paths[path] = true
+              name = info ? (info[:name].empty? ? info[:def_name] : info[:name]) : ''
+              part = @door
+              if part.nil? && info
+                role = PartClassifier.explicit(info, path, @roles, @door_tags)
+                part = new_part(path, name, role[0], role[1]) if role
+              elsif part && @roles[path] && @roles[path] != @cap.parts[part]['role']
+                # gán tay trên 1 phần con nằm trong bộ phận cha có vai trò khác -> tách thành bộ phận riêng
+                part = new_part(path, name, @roles[path], 'gán tay')
               end
-              @stack << [child, @ex.compose(@m, t), mkey || @inherit, @depth + 1, path, door]
+              @stack << [child, @ex.compose(@m, t), mkey || @inherit, @depth + 1, path, part, name.empty? ? 'Bộ phận' : name]
             end
           end
 
@@ -314,7 +386,10 @@ module MTDesign
             st['triangles'] = @cap.triangles.length
             st['edges'] = @cap.edges.length
             st['defs_cached'] = @ex.defs_count
+            classify_parts
+            st['parts'] = @cap.parts.length
             st['doors'] = @cap.doors.length
+            st['missing_roles'] = @roles.keys.reject { |pth| @seen_paths[pth] }
             st['extent'] = (0..2).map { |k| [@mins[k].round(1), @maxs[k].round(1)] } unless @cap.edges.empty?
             st['heaviest'] = @heavy.sort_by { |_, v| -v }.first(5).map { |n, v| "#{n}: #{v} tam giác" }
             st['seconds'] = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - @t0).round(2)

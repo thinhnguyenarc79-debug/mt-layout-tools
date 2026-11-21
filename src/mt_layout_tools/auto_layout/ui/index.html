@@ -145,12 +145,16 @@
       <div class="checks"><label><input id="pgFill" type="checkbox"> Tô màu</label><label><input id="pgDims" type="checkbox"> Kích thước</label></div>
       <div class="btns"><button id="pgPick" title="Chọn đối tượng gốc trong SketchUp">Chọn trong SketchUp</button><button id="pgReset">Đặt lại bố cục</button></div>
     </div>
-    <h3>Cánh tủ</h3>
-    <div class="body" id="doorBox">
-      <div id="doorList"></div>
-      <div class="btns"><button id="pickDoors" class="gold" title="Bấm đúp mở Group tủ, chọn các cánh bên trong, rồi bấm nút này">CHỌN CÁNH TRONG SKETCHUP</button>
-        <button id="clearDoors" title="Bỏ các cánh đã chọn tay">Bỏ cánh chọn tay</button></div>
-      <p class="hint">Cánh được nhận theo: chọn tay, thuộc tính "cánh/door", Tag cánh (mục 3), hoặc tên Group/Component chứa "cánh/door". Không đoán theo hình dạng.</p>
+    <h3>Cấu tạo tủ</h3>
+    <div class="body" id="partBox">
+      <div id="partCounts"></div>
+      <div class="row" style="align-items:flex-end">
+        <div><label>Gán phần đang chọn trong SketchUp là</label><select id="assignRole"></select></div>
+        <div style="flex:none"><button id="assignBtn" class="gold" title="Bấm đúp mở Group tủ, chọn 1 hoặc nhiều bộ phận, rồi bấm">Gán</button></div>
+      </div>
+      <input id="partSearch" type="text" placeholder="Lọc bộ phận..." style="margin-top:6px">
+      <div id="partList" class="list"></div>
+      <p class="hint">✓ = chắc chắn (gán tay, thuộc tính, Tag, tên). "đề xuất" = suy từ hình học/vật liệu – hãy xác nhận. 👁 chọn bộ phận trong SketchUp (không đổi model). Gán tay được lưu theo đường dẫn instance khi bấm 💾 Lưu.</p>
     </div>
     <h3>Mặt cắt</h3>
     <div class="body" id="secBox">
