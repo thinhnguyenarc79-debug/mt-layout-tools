@@ -90,8 +90,10 @@ module MTDesign
             data = @data
             case e
             when Sketchup::Group, Sketchup::ComponentInstance
+              info = { name: e.name.to_s, def_name: e.definition.name.to_s, tag: @ex.tag_of(e),
+                       attr: DoorDetector.attribute_says_door?(e) }
               data.kids << [e.transformation.to_a, @ex.material_key(e.material), e.definition, @ex.tag_of(e),
-                            e.is_a?(Sketchup::Group) ? :group : :component]
+                            e.is_a?(Sketchup::Group) ? :group : :component, e.persistent_id, info]
             when Sketchup::Edge
               return if e.soft? || e.smooth?
 
@@ -161,14 +163,15 @@ module MTDesign
         end
 
         # Bản đồng bộ (test): chạy CaptureBuilder tới khi xong.
-        def capture(model, inst, exclude, front, _job = nil)
-          cb = builder(model, inst, exclude, front)
+        def capture(model, inst, exclude, front, _job = nil, doors = {})
+          cb = builder(model, inst, exclude, front, doors)
           nil until cb.call(Geometry::NO_JOB)
           cb.result
         end
 
-        def builder(model, inst, exclude, front)
-          CaptureBuilder.new(self, model, inst, exclude, front)
+        # doors: { manual: ["pid/pid", ...], tags: ["Tag cánh"] } – xem DoorDetector.
+        def builder(model, inst, exclude, front, doors = {})
+          CaptureBuilder.new(self, model, inst, exclude, front, doors)
         end
 
         # Mở rộng cây Group/Component bên trong model đã chọn thành Capture (mm, toạ độ cục bộ),
@@ -177,7 +180,7 @@ module MTDesign
         class CaptureBuilder
           attr_reader :result
 
-          def initialize(ex, model, inst, exclude, front)
+          def initialize(ex, model, inst, exclude, front, doors = {})
             @ex = ex
             @t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             world = Geometry.world_transform(model, inst)
@@ -185,7 +188,13 @@ module MTDesign
                                          { 'groups' => 0, 'components' => 0, 'faces' => 0, 'edges_src' => 0 })
             @skip = exclude.map(&:to_s) | model.layers.reject(&:visible?).map(&:name)
             @heavy = Hash.new(0)
-            @stack = [[inst.definition, ex.root_matrix(world, front), ex.material_key(inst.material), 0]]
+            @manual = Array(doors[:manual] || doors['manual']).map(&:to_s)
+            @door_tags = Array(doors[:tags] || doors['tags']).map(&:to_s).reject(&:empty?)
+            @cap.edge_door = []
+            @cap.tri_door = []
+            @cap.doors = []
+            # khung: [definition, ma trận, vật liệu thừa kế, độ sâu, đường dẫn pid, mã cánh|nil]
+            @stack = [[inst.definition, ex.root_matrix(world, front), ex.material_key(inst.material), 0, '', nil]]
             @visited = 0
             @mins = [Float::INFINITY] * 3
             @maxs = [-Float::INFINITY] * 3
@@ -198,7 +207,7 @@ module MTDesign
               when :next
                 return finish if @stack.empty?
 
-                @defn, @m, @inherit, @depth = @stack.pop
+                @defn, @m, @inherit, @depth, @path, @door = @stack.pop
                 raise ArgumentError, 'Lồng nhóm quá 60 cấp (có thể tự tham chiếu).' if @depth > 60
 
                 if (@data = @ex.cached(@defn))
@@ -262,6 +271,7 @@ module MTDesign
                   @maxs[k] = hi if hi > @maxs[k]
                 end
                 @cap.edges << [a, b]
+                @cap.edge_door << @door
               end
               tris = pt[:tris]
               while @ti < tris.length
@@ -271,6 +281,7 @@ module MTDesign
                 @ti += 1
                 @cap.triangles << [@ex.apply(m, tr[0], tr[1], tr[2]), @ex.apply(m, tr[3], tr[4], tr[5]),
                                    @ex.apply(m, tr[6], tr[7], tr[8]), tr[9] || @inherit]
+                @cap.tri_door << @door
               end
               @pi += 1
               @ei = 0
@@ -280,11 +291,21 @@ module MTDesign
           end
 
           def push_kids
-            @data.kids.each do |t, mkey, child, tag, kind|
+            @data.kids.each do |t, mkey, child, tag, kind, pid, info|
               next if @skip.include?(tag)
 
               kind == :group ? @cap.stats['groups'] += 1 : @cap.stats['components'] += 1
-              @stack << [child, @ex.compose(@m, t), mkey || @inherit, @depth + 1]
+              path = @path.empty? ? pid.to_s : "#{@path}/#{pid}"
+              door = @door
+              if door.nil? && info
+                why = DoorDetector.reason(info, path, @manual, @door_tags)
+                if why
+                  door = @cap.doors.length
+                  @cap.doors << { 'id' => door, 'path' => path, 'name' => info[:name].empty? ? info[:def_name] : info[:name],
+                                  'reason' => why }
+                end
+              end
+              @stack << [child, @ex.compose(@m, t), mkey || @inherit, @depth + 1, path, door]
             end
           end
 
@@ -293,6 +314,7 @@ module MTDesign
             st['triangles'] = @cap.triangles.length
             st['edges'] = @cap.edges.length
             st['defs_cached'] = @ex.defs_count
+            st['doors'] = @cap.doors.length
             st['extent'] = (0..2).map { |k| [@mins[k].round(1), @maxs[k].round(1)] } unless @cap.edges.empty?
             st['heaviest'] = @heavy.sort_by { |_, v| -v }.first(5).map { |n, v| "#{n}: #{v} tam giác" }
             st['seconds'] = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - @t0).round(2)

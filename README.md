@@ -57,6 +57,9 @@ tools/build_rbz.py                        đóng gói + version.json
 | Mặt cắt thật A-A/B-B/C-C (giao mặt phẳng × hình học, nét cắt, hatch, DIM, ký hiệu + mũi tên, đề xuất vị trí, kéo đường cắt) | ✅ v2.2 |
 | Chú thích: Text, nhiều dòng, Leader, ghi chú vật liệu (chọn từ vật liệu có trong model), layer ẩn/hiện | ✅ v2.3 |
 | Chi tiết phóng to (khoanh vùng trên hình chiếu/mặt cắt, tỉ lệ riêng, DIM, hatch) | ✅ v2.3 |
+| Phân biệt DIM có cánh / tháo cánh: nhận diện cánh (chọn tay theo đường dẫn instance, thuộc tính, Tag, tên); bộ DIM Exterior/Door/Interior/Section; chống chồng chữ; kéo hàng DIM | ✅ v2.4 |
+| Giữ đúng tỉ lệ đã chọn: tự chia nhiều tờ (A-01 (1/n)…), PDF xuất đủ tờ | ✅ v2.4 |
+| Job Engine máy trạng thái (không Fiber/Thread) | ✅ v2.3.1 |
 | Model lớn: cache definition, lưới không gian, 3 mức dự phòng, tiến trình + Huỷ, log | ✅ v2.1 |
 | Nét đứt cho cạnh khuất, phân cấp nét bao/cấu tạo, đường trục | ⏳ Giai đoạn 2 |
 | Nhận diện bộ phận tủ (cánh, vách, đợt…), gán thủ công | ⏳ Giai đoạn 2 |

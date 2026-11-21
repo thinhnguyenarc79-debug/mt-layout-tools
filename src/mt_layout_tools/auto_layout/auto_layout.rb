@@ -5,6 +5,7 @@ require 'tmpdir'
 require_relative 'core/pdf'
 require_relative 'core/job'
 require_relative 'core/geometry'
+require_relative 'core/door_detector'
 require_relative 'core/extractor'
 require_relative 'core/canvas'
 require_relative 'core/dimension_engine'
@@ -44,7 +45,7 @@ module MTDesign
             'ready' => :on_ready, 'scan' => :on_scan, 'generate' => :on_generate, 'render' => :on_render,
             'refresh' => :on_refresh, 'save' => :on_save, 'export_pdf' => :on_export_pdf,
             'export_svg' => :on_export_svg, 'save_json' => :on_save_json, 'open_json' => :on_open_json,
-            'pick' => :on_pick, 'cancel' => :on_cancel
+            'pick' => :on_pick, 'cancel' => :on_cancel, 'pick_doors' => :on_pick_doors
           }.each do |name, handler|
             d.add_action_callback(name) do |_ctx, arg|
               guard(d, name) { send(handler, d, arg) }
@@ -159,8 +160,8 @@ module MTDesign
             ModelScanner.page_status(model, pg)
           end
 
-          def capture_builder(entity, exclude, front)
-            @extractor.builder(model, entity, exclude, front)
+          def capture_builder(entity, exclude, front, doors = {})
+            @extractor.builder(model, entity, exclude, front, doors)
           end
 
           def log(msg)
@@ -225,8 +226,10 @@ module MTDesign
 
           t0 = Time.now
           pb = PageBuild.new(env, project, page, :svg)
+          want = data['sheet'].to_i
           start_job(d, 'render', pb.tasks, lambda do
-            svg, info = pb.output
+            outs = pb.outputs
+            svg, info = outs[want.clamp(0, outs.length - 1)]
             info['ms'] = ((Time.now - t0) * 1000).round
             push(d, 'page', { 'page_id' => page['id'], 'svg' => svg, 'info' => info })
           end)
@@ -258,12 +261,12 @@ module MTDesign
             [Job.once('trang') { |j| j.progress("Xuất PDF: trang #{i + 1}/#{pages.length} (#{pages[i]['sheet_no']})", 100.0 * i / pages.length) }] + pb.tasks
           end
           start_job(d, 'export_pdf', tasks, lambda do
-            contents = builds.map { |pb| pb.output[0] }
+            contents = builds.flat_map { |pb| pb.outputs.map(&:first) }
             notes = builds.each_with_index.filter_map { |pb, i| "#{pages[i]['sheet_no']}: #{pb.output[1]['note']}" if pb.output[1]['note'] }
             bytes = Pdf.pdf_pages(contents, [pw * Pdf::MM_TO_PT, ph * Pdf::MM_TO_PT])
             name = pages.length == 1 ? "#{pages[0]['sheet_no']} #{pages[0]['name']}" : project['name']
             path = save_file(name, 'pdf', bytes)
-            msg = path ? "Đã xuất #{pages.length} trang: #{File.basename(path)}" : 'Đã huỷ lưu.'
+            msg = path ? "Đã xuất #{pages.length} trang (#{contents.length} tờ): #{File.basename(path)}" : 'Đã huỷ lưu.'
             msg += " Lưu ý – #{notes.join(' | ')}" unless notes.empty?
             push(d, notes.empty? ? 'saved' : 'warn', { 'message' => msg })
             UI.openURL("file:///#{path.tr('\\', '/')}") if path
@@ -278,7 +281,8 @@ module MTDesign
 
           pb = PageBuild.new(env, project, page, :svg)
           start_job(d, 'export_svg', pb.tasks, lambda do
-            path = save_file("#{page['sheet_no']} #{page['name']}", 'svg', pb.output[0])
+            idx = data['sheet'].to_i.clamp(0, pb.outputs.length - 1)
+            path = save_file("#{page['sheet_no']} #{page['name']}#{pb.outputs.length > 1 ? " to #{idx + 1}" : ''}", 'svg', pb.outputs[idx][0])
             push(d, 'saved', { 'message' => path ? "Đã xuất #{File.basename(path)}" : 'Đã huỷ lưu.' })
           end)
         end
@@ -307,6 +311,24 @@ module MTDesign
           model.selection.add(e)
           model.active_view.zoom(e)
           push(d, 'saved', { 'message' => "Đang chọn: #{Geometry.instance_name(e)}" })
+        end
+
+        # CHỌN CÁNH TRONG SKETCHUP: người dùng mở Group tủ (bấm đúp), chọn các Group/Component cánh rồi bấm nút.
+        # Lưu đường dẫn persistent_id tính từ Group tủ -> nhận diện đúng cả cánh lồng nhiều cấp. Không sửa model.
+        def on_pick_doors(d, arg)
+          root_pid = arg.to_i
+          path = model.active_path || []
+          idx = path.index { |e| e.persistent_id == root_pid }
+          sel = model.selection.select { |e| ModelScanner.model_like?(e) }
+          if idx.nil?
+            raise ArgumentError, 'Hãy bấm đúp để mở Group tủ của trang này, chọn các cánh bên trong rồi bấm lại "CHỌN CÁNH TRONG SKETCHUP".'
+          end
+          raise ArgumentError, 'Chưa chọn Group/Component cánh nào (đang mở Group tủ nhưng chưa chọn cánh).' if sel.empty?
+
+          prefix = path[(idx + 1)..-1].map(&:persistent_id)
+          paths = sel.map { |e| (prefix + [e.persistent_id]).join('/') }
+          names = sel.map { |e| Geometry.instance_name(e) }
+          push(d, 'doors', { 'pid' => root_pid, 'paths' => paths, 'names' => names })
         end
 
         def folder

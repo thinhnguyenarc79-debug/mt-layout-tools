@@ -26,8 +26,6 @@ module MTDesign
           @extent = nil
         end
 
-        attr_reader :output
-
         # Trả về danh sách Task (thêm vào Job theo thứ tự).
         def tasks
           [Job.once('kiểm tra') { |job| check(job) },
@@ -57,30 +55,37 @@ module MTDesign
         end
 
         # ---------- 2+3. thu thập hình học ----------
-        def cap_key(extra)
-          exclude = (@project['exclude_tags'] + extra).uniq.sort
-          [@pg['pid'], @pg['front'], exclude].to_json
+        # Cấu hình nhận diện cánh cho trang: chọn tay (đường dẫn instance) + Tag cánh của dự án.
+        def door_cfg
+          { manual: Array(@pg['doors']), tags: [@project['door_tag'].to_s].reject(&:empty?) }
         end
 
-        def capture_task(extra)
+        # variant :all = đủ hình học; :nodoor = đã bỏ các phần được xác định là cánh.
+        def cap_key(variant = :all)
+          [@pg['pid'], @pg['front'], @project['exclude_tags'].uniq.sort, door_cfg[:manual].sort, door_cfg[:tags],
+           variant.to_s].to_json
+        end
+
+        def capture_task(_variant = :all)
           builder = nil
           Job::Task.new('đọc hình học') do |job|
             next true if @fatal
 
-            key = cap_key(extra)
+            key = cap_key(:all)
             cache[:caps] ||= {}
             if cache[:caps][key]
               true
             else
               begin
-                builder ||= @env.capture_builder(@entity, (@project['exclude_tags'] + extra).uniq, @pg['front'])
+                builder ||= @env.capture_builder(@entity, @project['exclude_tags'].uniq, @pg['front'], door_cfg)
                 if builder.call(job)
                   cap = builder.result
                   cache[:caps][key] = cap
                   st = cap.stats
-                  @env.log("CAPTURE pid=#{@pg['pid']} '#{cap.name}' exclude=#{extra.inspect}: group con=#{st['groups']} " \
+                  @env.log("CAPTURE pid=#{@pg['pid']} '#{cap.name}': group con=#{st['groups']} " \
                            "component con=#{st['components']} face=#{st['faces']} cạnh nguồn=#{st['edges_src']} -> " \
                            "cạnh=#{st['edges']} tam giác=#{st['triangles']} definition=#{st['defs_cached']} " \
+                           "cánh=#{st['doors']} (#{Array(cap.doors).map { |d| "#{d['name']}: #{d['reason']}" }.join('; ')}) " \
                            "#{st['seconds']}s; nặng nhất: #{Array(st['heaviest']).join('; ')}")
                   true
                 else
@@ -89,69 +94,93 @@ module MTDesign
               rescue Job::Cancelled
                 raise
               rescue ArgumentError => e
-                @fatal = e.message if extra.empty?
-                @notes << e.message unless extra.empty?
+                @fatal = e.message
                 true
               end
             end
           end
         end
 
-        def cap_for(extra)
-          (cache[:caps] || {})[cap_key(extra)]
+        def cap_for(variant = :all)
+          caps = (cache[:caps] ||= {})
+          return caps[cap_key(:all)] if variant == :all
+
+          base = caps[cap_key(:all)]
+          return nil unless base
+
+          caps[cap_key(:nodoor)] ||= base.without_doors
         end
 
         # ---------- lập kế hoạch các hình ----------
         def plan(job)
           return job.insert_next([finish_task]) if @fatal
 
-          cap = cap_for([])
+          cap = cap_for(:all)
           @mats = cap.materials.values
           @extent = cap.stats['extent']
+          @doors = Array(cap.doors)
           list = []
           @pg['views'].each do |k|
             if k == 'open'
-              door = @project['door_tag'].to_s
-              if door.empty?
-                @notes << 'Chưa chọn Tag cánh nên bỏ qua "Mặt đứng tháo cánh".'
+              if @doors.empty?
+                @notes << 'Chưa xác định được cánh tủ nên KHÔNG tạo "Mặt đứng tháo cánh" (không ẩn đoán). ' \
+                          'Bấm "CHỌN CÁNH TRONG SKETCHUP" hoặc chọn Tag cánh.'
                 next
               end
-              list << capture_task([door])
-              list << view_task(k, [door])
+              list << view_task(k, :nodoor)
             else
-              list << view_task(k, [])
+              list << view_task(k, :all)
             end
           end
           list << Job.once('mặt cắt') { |j| plan_sections(j) }
           job.insert_next(list)
         end
 
-        def view_key(k, extra)
-          "#{cap_key(extra)}|#{k}"
+        def view_key(k, variant)
+          "#{cap_key(variant)}|#{k}"
+        end
+
+        # Bộ DIM cho từng loại hình (Dimension Engine nhận cả loại hình + đối tượng hiển thị).
+        def dim_mode_for(k)
+          case k
+          when 'front'
+            fd = @pg['front_dims'].to_s
+            if fd == 'interior' then :interior
+            elsif fd == 'exterior' then :exterior
+            else @doors.empty? ? :exterior : :door
+            end
+          when 'open' then :interior
+          when 'iso' then :none
+          else :exterior
+          end
         end
 
         # ---------- 4+5. hình chiếu ----------
-        def view_task(k, extra)
+        def view_task(k, variant)
           pr = nil
           name = Geometry::VIEWS[k][0]
           guarded("hình #{name}", k) do |job|
             cache[:views] ||= {}
-            vk = view_key(k, extra)
-            if cache[:views][vk]
-              @views << cache[:views][vk]
-              next true
+            vk = view_key(k, variant)
+            unless cache[:views][vk]
+              cap = cap_for(variant)
+              raise ArgumentError, "#{name}: chưa đọc được hình học." unless cap
+
+              pr ||= Geometry::Projector.new(cap, k)
+              next false unless pr.call(job)
+
+              v = pr.result
+              if variant == :all && @doors.any? && %w[front back].include?(k)
+                l, t = v[:origin]
+                v[:door_boxes] = cap.door_boxes(v[:fn]).map { |d| b = d['box']; [b[0] - l, b[1] - l, b[2] - t, b[3] - t] }
+              end
+              st = v[:stats]
+              @env.log("VIEW #{k} '#{cap.name}': tam giác=#{st['tris']} cạnh vào=#{st['edges_in']} sau lọc=#{st['edges']} " \
+                       "nét=#{st['lines']} mức=#{st['level']} #{st['seconds']}s#{v[:notes].empty? ? '' : ' | ' + v[:notes].join(' | ')}")
+              cache[:views][vk] = v
             end
-            cap = cap_for(extra)
-            raise ArgumentError, "#{name}: chưa đọc được hình học." unless cap
-
-            pr ||= Geometry::Projector.new(cap, k)
-            next false unless pr.call(job)
-
-            v = pr.result
-            st = v[:stats]
-            @env.log("VIEW #{k} '#{cap.name}': tam giác=#{st['tris']} cạnh vào=#{st['edges_in']} sau lọc=#{st['edges']} " \
-                     "nét=#{st['lines']} mức=#{st['level']} #{st['seconds']}s#{v[:notes].empty? ? '' : ' | ' + v[:notes].join(' | ')}")
-            cache[:views][vk] = v
+            v = cache[:views][vk]
+            v[:dim_mode] = dim_mode_for(k)
             @views << v
             true
           end
@@ -177,12 +206,13 @@ module MTDesign
         def plan_sections(job)
           list = []
           if @pg['sections'].nil?
-            front = @views.find { |v| v[:key] == 'front' }
-            if front
-              suggest(front)
+            # đề xuất vị trí cắt từ cấu tạo bên trong: dùng hình tháo cánh nếu có cánh, không thì mặt đứng
+            src_key = @doors.empty? ? 'front' : 'open'
+            src = @views.find { |v| v[:key] == src_key }
+            if src
+              suggest(src)
             else
-              # cần mặt đứng để đề xuất vị trí cắt
-              list << view_task('front', []).tap { |_t| @want_front_only = true }
+              list << view_task(src_key, @doors.empty? ? :all : :nodoor).tap { |_t| @want_front_only = src_key }
               list << Job.once('đề xuất mặt cắt') { |j| suggest_from_cache(j) }
             end
           end
@@ -191,9 +221,10 @@ module MTDesign
         end
 
         def suggest_from_cache(_job)
-          front = @views.find { |v| v[:key] == 'front' }
-          # mặt đứng dựng chỉ để đề xuất: không đưa lên giấy nếu người dùng không chọn
-          @views.delete(front) if front && @want_front_only && !@pg['views'].include?('front')
+          key = @want_front_only || 'front'
+          front = @views.find { |v| v[:key] == key }
+          # hình dựng chỉ để đề xuất: không đưa lên giấy nếu người dùng không chọn
+          @views.delete(front) if front && @want_front_only && !@pg['views'].include?(key)
           suggest(front) if front
           @pg['sections'] ||= []
         end
@@ -213,18 +244,20 @@ module MTDesign
             name = "MẶT CẮT #{sec['label']}-#{sec['label']}"
             guarded(name, SectionEngine.key(sec)) do |job|
               cache[:views] ||= {}
-              vk = "#{cap_key([])}|sec|#{sec['axis']}|#{sec['pos']}|#{sec['dir']}|#{sec['label']}"
+              vk = "#{cap_key(:all)}|sec|#{sec['axis']}|#{sec['pos']}|#{sec['dir']}|#{sec['label']}"
               if cache[:views][vk]
+                cache[:views][vk][:dim_mode] = :section
                 @views << cache[:views][vk]
                 next true
               end
-              sb ||= SectionEngine::SectionBuilder.new(cap_for([]), sec)
+              sb ||= SectionEngine::SectionBuilder.new(cap_for(:all), sec)
               next false unless sb.call(job)
 
               v = sb.result
               st = v[:stats]
               @env.log("SECTION #{sec['label']} #{sec['axis']}=#{sec['pos']} dir=#{sec['dir']}: nét cắt=#{st['cut_segments']} " \
                        "vòng kín=#{st['cut_loops']} nét=#{st['lines']} mức=#{st['level']} #{st['seconds']}s")
+              v[:dim_mode] = :section
               cache[:views][vk] = v
               @views << v
               true
@@ -241,7 +274,9 @@ module MTDesign
               next
             end
             begin
-              @views << DetailEngine.build(src, det)
+              dv = DetailEngine.build(src, det)
+              dv[:dim_mode] = :interior
+              @views << dv
             rescue StandardError => e
               @failed << DetailEngine.key(det)
               @notes << e.message
@@ -266,47 +301,72 @@ module MTDesign
           end
           # Mốc DIM (quét toàn bộ nét) tính trước, mỗi hình 1 bước, để bước dàn trang nhẹ.
           gap = @pg['min_gap'].to_f
-          @views.select { |v| v[:dims] && !v[:detail] }.each do |v|
+          @views.select { |v| v[:dims] && !v[:detail] && v[:dim_mode] != :exterior }.each do |v|
             list << Job.once("mốc DIM #{v[:name]}") { DimensionEngine.view_breaks(v, gap) }
           end
           list
         end
 
-        # ---------- 6+8. DIM + dàn trang: xếp chỗ -> vẽ từng hình (mỗi hình 1 lô) -> ghép ----------
+        # ---------- 6+8. DIM + dàn trang: chia tờ -> xếp chỗ -> vẽ từng hình (mỗi hình 1 lô) -> ghép ----------
+        attr_reader :outputs
+
         def finish_task
-          Job.once('xếp chỗ') do |job|
+          Job.once('chia tờ') do |job|
             job.progress("#{label}: dàn trang", 99)
             @notes.unshift(@fatal) if @fatal
             @pw, @ph = Sheet.paper(@project['paper'])
-            @ctx = Sheet.prepare(@views, @mats, @pg, @pw, @ph)
-            @frags = []
-            steps = @ctx[:placements].map do |pl|
-              Job.once("vẽ #{pl[0][:name]}") do |j|
-                j.progress("#{label}: vẽ #{pl[0][:name].downcase}, ghi kích thước", 99)
-                sub = Canvas.new(@fmt, @pw, @ph)
-                Sheet.draw_placement(sub, @ctx, pl, @pg)
-                @frags << sub.parts
-              end
-            end
-            job.insert_next(steps + [assemble_task])
+            sheets = Sheet.paginate(@views, @mats, @pg, @pw, @ph)
+            @outputs = Array.new(sheets.length)
+            steps = sheets.each_with_index.flat_map { |(group, forced, note), i| sheet_tasks(i, sheets.length, group, forced, note) }
+            job.insert_next(steps)
           end
         end
 
-        def assemble_task
-          Job.once('ghép trang') do
+        def sheet_tasks(idx, total, group, forced, note)
+          st = { frags: [] }
+          prep = Job.once("xếp chỗ tờ #{idx + 1}") do |job|
+            st[:ctx] = Sheet.prepare(group, @mats, @pg, @pw, @ph, forced)
+            draws = st[:ctx][:placements].map do |pl|
+              Job.once("vẽ #{pl[0][:name]}") do |j|
+                j.progress("#{label}: vẽ #{pl[0][:name].downcase}, ghi kích thước (tờ #{idx + 1}/#{total})", 99)
+                sub = Canvas.new(@fmt, @pw, @ph)
+                Sheet.draw_placement(sub, st[:ctx], pl, @pg)
+                st[:frags] << sub.parts
+              end
+            end
+            job.insert_next(draws + [assemble_task(idx, total, group, st, note)])
+          end
+          [prep]
+        end
+
+        def assemble_task(idx, total, group, st, note)
+          Job.once("ghép tờ #{idx + 1}") do
             cv = Canvas.new(@fmt, @pw, @ph)
-            tb = @project['tb'].merge('sheet_name' => @pg['name'], 'sheet_no' => @pg['sheet_no'])
-            info = Sheet.assemble(cv, @ctx, @frags, @pg, tb, @notes)
-            info['note'] = @notes.empty? ? info['note'] : [info['note'], *@notes].compact.uniq.join(' ')
+            no = total > 1 ? "#{@pg['sheet_no']} (#{idx + 1}/#{total})" : @pg['sheet_no']
+            tb = @project['tb'].merge('sheet_name' => @pg['name'], 'sheet_no' => no)
+            notes = idx.zero? ? @notes.dup : []
+            notes << note if note
+            # chú thích, ký hiệu chỉ đặt trên tờ 1 (tọa độ chú thích là của tờ chính)
+            pg = idx.zero? ? @pg : @pg.merge('notes' => [])
+            info = Sheet.assemble(cv, st[:ctx], st[:frags], pg, tb, notes)
+            info['note'] = notes.empty? ? info['note'] : [info['note'], *notes].compact.uniq.join(' ')
             info['failed'] = @failed
             info['complete'] = !@views.empty? && @failed.empty? && @views.all? { |v| v[:level].to_i <= 1 }
-            info['levels'] = @views.map { |v| [v[:key], v[:level]] }.to_h
+            info['levels'] = group.map { |v| [v[:key], v[:level]] }.to_h
             info['sections'] = @pg['sections']
             info['materials'] = @mats.map { |m| m['name'] }
             info['extent'] = @extent ? { 'x' => @extent[0], 'y' => @extent[1], 'z' => @extent[2] } : nil
-            @output = [@fmt == :svg ? cv.svg : cv.content, info]
-            @ctx = @frags = nil
+            info['doors'] = Array(@doors).map { |d| { 'name' => d['name'], 'reason' => d['reason'], 'path' => d['path'] } }
+            info['sheet'] = idx
+            info['sheets'] = total
+            @outputs[idx] = [@fmt == :svg ? cv.svg : cv.content, info]
+            st.clear
           end
+        end
+
+        # Tờ đầu (tương thích chỗ gọi cũ).
+        def output
+          @outputs && @outputs[0]
         end
       end
     end

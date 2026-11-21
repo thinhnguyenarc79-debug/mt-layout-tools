@@ -41,6 +41,11 @@
         if (d.done) { busy(false); return; }
         busy(true); $('busyText').textContent = d.text || 'Đang xử lý…';
         $('busyPct').textContent = d.pct ? d.pct + '%' : ''; $('busyBar').style.width = (d.pct || 0) + '%';
+      } else if (kind === 'doors') {
+        var pd = page();
+        if (!pd || pd.pid !== d.pid) return;
+        snapshot(); pd.doors = d.paths; changed(); requestRender(true);
+        msg('Đã nhận ' + d.paths.length + ' cánh: ' + d.names.join(', '), 'ok');
       } else if (kind === 'warn') {
         msg(d.message, 'warn');
       } else if (kind === 'saved') {
@@ -164,6 +169,7 @@
     if (!p) return;
     $('pgName').value = p.name; $('pgNo').value = p.sheet_no; $('pgScale').value = String(p.scale);
     $('pgFront').value = p.front; setChecks($('pgViews'), p.views);
+    $('pgFrontDims').value = p.front_dims || 'auto';
     $('pgGap').value = p.min_gap; $('pgRound').value = p.round; $('pgFill').checked = p.fill; $('pgDims').checked = p.dims;
   }
 
@@ -180,6 +186,16 @@
     $('vReset').onclick = function () {
       snapshot(); delete page().offsets[S.sel]; changed();
     };
+  }
+
+  // ---------------- cánh tủ ----------------
+  function renderDoors() {
+    var p = page(), box = $('doorList'); if (!p) { box.innerHTML = ''; return; }
+    var ds = (S.info && S.info.doors) || [];
+    box.innerHTML = ds.length ? '<label>Đã xác định ' + ds.length + ' cánh</label>' + ds.map(function (d) {
+      return '<div class="door-it"><span>' + esc(d.name || 'Cánh') + '</span><span class="why">' + esc(d.reason) + '</span></div>';
+    }).join('') : '<p class="hint" style="color:#8a5a12">Chưa xác định được cánh: mặt đứng chính chỉ ghi kích thước ngoài và không tạo hình tháo cánh. ' +
+      'Bấm đúp mở Group tủ trong SketchUp, chọn các cánh, rồi bấm nút dưới.</p>';
   }
 
   // ---------------- mặt cắt ----------------
@@ -351,7 +367,7 @@
 
   // ---------------- trang & dựng ----------------
   function openPage(id) {
-    S.cur = id || null; S.sel = null; S.info = null;
+    S.cur = id || null; S.sel = null; S.info = null; S.sheet = 0;
     renderPages(); renderPageProps(); renderViewProps();
     $('paper').innerHTML = '';
     if (S.cur) requestRender(true);
@@ -360,7 +376,7 @@
     if (!S.cur) return;
     clearTimeout(S.timer);
     S.timer = setTimeout(function () {
-      busy(true); call('render', { project: S.project, page_id: S.cur });
+      busy(true); call('render', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 });
     }, now ? 0 : 350);
   }
   function showSvg(svg, info) {
@@ -373,7 +389,11 @@
     var p = page();
     if (p && info.offsets) p.offsets = info.offsets; // đồng bộ vị trí đã kẹp trong vùng vẽ
     if (p && info.sections && p.sections == null) p.sections = info.sections; // nhận vị trí cắt plugin đề xuất
-    renderSections(); renderDetails(); if (S.selNote) renderNotes();
+    renderSections(); renderDetails(); renderDoors(); if (S.selNote) renderNotes();
+    var n = info.sheets || 1;
+    $('sheetNav').style.display = n > 1 ? 'inline' : 'none';
+    $('shLbl').textContent = 'Tờ ' + ((info.sheet || 0) + 1) + '/' + n;
+    S.nSheets = n;
     var svgEl = paper.querySelector('svg');
     svgEl.removeAttribute('width'); svgEl.removeAttribute('height');
     svgEl.querySelectorAll('g.view').forEach(function (g) {
@@ -453,6 +473,11 @@
       drag = { mode: nearTip ? 'tip' : 'note', g: gn, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
       e.preventDefault(); return;
     }
+    var ds = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.dimset');
+    if (ds) {
+      drag = { mode: 'dim', g: ds, key: ds.getAttribute('data-key'), side: ds.getAttribute('data-side'), x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+      e.preventDefault(); e.stopPropagation(); return;
+    }
     var mk = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.secmark');
     if (mk) {
       drag = { mode: 'sec', g: mk, label: mk.getAttribute('data-sec'), axis: mk.getAttribute('data-axis'), x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
@@ -483,6 +508,9 @@
     } else if (drag.mode === 'note' || drag.mode === 'tip') {
       drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
       if (drag.mode === 'note') drag.g.setAttribute('transform', 'translate(' + drag.dx + ' ' + drag.dy + ')');
+    } else if (drag.mode === 'dim') {
+      drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
+      drag.g.setAttribute('transform', drag.side === 'top' ? 'translate(0 ' + drag.dy + ')' : 'translate(' + drag.dx + ' 0)');
     } else if (drag.mode === 'sec') {
       drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
       drag.g.setAttribute('transform', drag.axis === 'x' ? 'translate(' + drag.dx + ' 0)' : 'translate(0 ' + drag.dy + ')');
@@ -504,6 +532,15 @@
       var n = selNote(); if (!n) return;
       snapshot();
       if (d.mode === 'note') { n.x += d.dx; n.y += d.dy; } else { n.tx += d.dx; n.ty += d.dy; }
+      changed(); requestRender(true); return;
+    }
+    if (d.mode === 'dim') {
+      var mv = d.side === 'top' ? d.dy : d.dx;
+      if (Math.abs(mv) < 0.2) return;
+      var pg = page(); snapshot();
+      pg.dimoff = pg.dimoff || {}; pg.dimoff[d.key] = pg.dimoff[d.key] || {};
+      var cur = pg.dimoff[d.key][d.side] || 0;
+      pg.dimoff[d.key][d.side] = Math.max(-60, Math.min(60, Math.round((cur + mv) * 100) / 100));
       changed(); requestRender(true); return;
     }
     if (d.mode === 'sec') {
@@ -586,11 +623,19 @@
   $('zfit').onclick = fit;
   $('undo').onclick = undo; $('redo').onclick = redo;
   $('cancel').onclick = function () { call('cancel', null); };
-  $('refresh').onclick = function () { if (!S.cur) return; busy(true); call('refresh', { project: S.project, page_id: S.cur }); };
+  $('shPrev').onclick = function () { if ((S.sheet || 0) > 0) { S.sheet--; requestRender(true); } };
+  $('shNext').onclick = function () { if ((S.sheet || 0) < (S.nSheets || 1) - 1) { S.sheet++; requestRender(true); } };
+  $('pickDoors').onclick = function () { var p = page(); if (p) call('pick_doors', String(p.pid)); };
+  $('clearDoors').onclick = function () {
+    var p = page(); if (!p || !(p.doors || []).length) return;
+    if (!window.confirm('Bỏ ' + p.doors.length + ' cánh đã chọn tay của trang này?')) return;
+    snapshot(); p.doors = []; changed();
+  };
+  $('refresh').onclick = function () { if (!S.cur) return; busy(true); call('refresh', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 }); };
   $('save').onclick = save;
   $('pdfPage').onclick = function () { if (S.cur) call('export_pdf', { project: S.project, page_ids: [S.cur] }); };
   $('pdfAll').onclick = function () { call('export_pdf', { project: S.project, page_ids: [] }); };
-  $('svgPage').onclick = function () { if (S.cur) call('export_svg', { project: S.project, page_id: S.cur }); };
+  $('svgPage').onclick = function () { if (S.cur) call('export_svg', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 }); };
   $('openJson').onclick = function () { call('open_json', null); };
   $('saveJson').onclick = function () { call('save_json', S.project); };
   window.addEventListener('resize', function () { if (S.cur) applyView(); });
@@ -681,11 +726,12 @@
     snapshot();
     p.name = $('pgName').value; p.sheet_no = $('pgNo').value; p.scale = parseInt($('pgScale').value, 10);
     p.front = $('pgFront').value; p.views = getChecks($('pgViews'));
+    p.front_dims = $('pgFrontDims').value;
     p.min_gap = parseFloat($('pgGap').value) || 0; p.round = parseFloat($('pgRound').value) || 1;
     p.fill = $('pgFill').checked; p.dims = $('pgDims').checked;
     renderPages(); changed();
   }
-  ['pgName', 'pgNo', 'pgScale', 'pgFront', 'pgViews', 'pgGap', 'pgRound', 'pgFill', 'pgDims'].forEach(function (id) {
+  ['pgName', 'pgNo', 'pgScale', 'pgFront', 'pgFrontDims', 'pgViews', 'pgGap', 'pgRound', 'pgFill', 'pgDims'].forEach(function (id) {
     $(id).addEventListener('change', readPage);
   });
   $('pgPick').onclick = function () { var p = page(); if (p) call('pick', String(p.pid)); };

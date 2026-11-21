@@ -112,8 +112,41 @@ module MTDesign
           assemble(cv, ctx, frags, page, tb, notes)
         end
 
+        # Giữ đúng tỉ lệ người dùng chọn: nếu tất cả hình không vừa 1 tờ ở tỉ lệ đó thì chia sang nhiều tờ
+        # (không thu nhỏ hình). Tỉ lệ "Tự động" -> 1 tờ, tự chọn tỉ lệ vừa khổ.
+        # Trả về [[views, tỉ lệ ép | nil, ghi chú | nil], ...] – mỗi phần tử là 1 tờ.
+        def paginate(views, mats, page, pw, ph)
+          want = page['scale'].to_i
+          return [[views, nil, nil]] if want <= 0 || views.empty?
+
+          _frame, _tb, area = frames(pw, ph)
+          aw = area[2] - area[0]
+          legend_h = mats.first(14).empty? ? 0 : mats.first(14).length * 4.2 + 2
+          ah = area[3] - area[1] - legend_h
+          fits = lambda do |group|
+            pl = plan(group, want, aw, ah)
+            pl[:w] <= aw && pl[:h] <= ah
+          end
+          return [[views, want, nil]] if fits.call(views)
+
+          # first-fit: mỗi hình vào tờ đầu tiên còn chỗ (giữ thứ tự hình trong từng tờ) -> ít tờ trống
+          sheets = []
+          views.each do |v|
+            target = sheets.find { |g| fits.call(g + [v]) }
+            target ? target << v : sheets << [v]
+          end
+          sheets.map do |group|
+            if fits.call(group)
+              [group, want, nil]
+            else
+              [group, nil, "#{group.map { |v| v[:name] }.join(', ')}: quá lớn cho khổ giấy ở 1:#{want}, tờ này dùng tỉ lệ tự động."]
+            end
+          end
+        end
+
         # Chọn tỉ lệ + vị trí từng hình (chưa vẽ). Trả về ngữ cảnh dùng cho các bước sau.
-        def prepare(views, mats, page, pw, ph)
+        # forced: tỉ lệ đã được paginate xác nhận là vừa (giữ nguyên, không đổi).
+        def prepare(views, mats, page, pw, ph, forced = nil)
           frame, tb_x, area = frames(pw, ph)
           aw = area[2] - area[0]
           legend = mats.first(14)
@@ -126,8 +159,8 @@ module MTDesign
             info['note'] = 'Trang chưa có hình chiếu nào.'
             return ctx
           end
-          auto = pick_scale(views, aw, ah)
-          want = page['scale'].to_i
+          auto = forced || pick_scale(views, aw, ah)
+          want = forced || page['scale'].to_i
           if auto.nil?
             scale = want.positive? ? want : SCALES.last
             info['note'] = 'Đối tượng quá lớn cho khổ giấy này; hãy chọn khổ lớn hơn hoặc bớt hình.'

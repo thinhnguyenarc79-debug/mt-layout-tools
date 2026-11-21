@@ -47,9 +47,43 @@ module MTDesign
         }.freeze
 
         # edges: [[p, q]], triangles: [[a, b, c, mat_key]], materials: {key => {name, color}}, stats: Hash
-        Capture = Struct.new(:name, :edges, :triangles, :materials, :stats) do
-          def initialize(name, edges, triangles, materials, stats = {})
+        # edge_door / tri_door: mã cánh (chỉ số trong doors) của từng cạnh/tam giác, nil = không thuộc cánh.
+        Capture = Struct.new(:name, :edges, :triangles, :materials, :stats, :edge_door, :tri_door, :doors) do
+          def initialize(name, edges, triangles, materials, stats = {}, edge_door = nil, tri_door = nil, doors = [])
             super
+          end
+
+          def doors?
+            !doors.nil? && !doors.empty?
+          end
+
+          # Bản sao KHÔNG có cánh (cho MẶT ĐỨNG THÁO CÁNH). Chỉ lọc dữ liệu đã đọc, không đụng file SKP.
+          def without_doors
+            e = []
+            t = []
+            edges.each_with_index { |x, i| e << x if edge_door.nil? || edge_door[i].nil? }
+            triangles.each_with_index { |x, i| t << x if tri_door.nil? || tri_door[i].nil? }
+            Capture.new(name, e, t, materials, stats.merge('without_doors' => true), nil, nil, [])
+          end
+
+          # Hộp bao từng cánh theo 1 phép chiếu (toạ độ hình chiếu trước khi trừ gốc).
+          def door_boxes(fn)
+            return [] unless doors?
+
+            boxes = {}
+            edges.each_with_index do |(a, b), i|
+              d = edge_door[i]
+              next if d.nil?
+
+              [fn.call(a), fn.call(b)].each do |p|
+                bx = (boxes[d] ||= [Float::INFINITY, -Float::INFINITY, Float::INFINITY, -Float::INFINITY])
+                bx[0] = p[0] if p[0] < bx[0]
+                bx[1] = p[0] if p[0] > bx[1]
+                bx[2] = p[1] if p[1] < bx[2]
+                bx[3] = p[1] if p[1] > bx[3]
+              end
+            end
+            boxes.map { |d, bx| { 'id' => d, 'name' => doors[d]['name'], 'box' => bx } }
           end
         end
 

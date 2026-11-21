@@ -104,7 +104,7 @@ class TestJobEngine < Minitest::Test
       'ok'
     end
 
-    def capture_builder(_e, _exclude, _front)
+    def capture_builder(_e, _exclude, _front, _doors = {})
       cap = @cap
       Struct.new(:result) { def call(_job); true; end }.new(cap)
     end

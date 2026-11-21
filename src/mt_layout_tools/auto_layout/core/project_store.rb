@@ -83,6 +83,10 @@ module MTDesign
             'notes' => AnnotationEngine.clean(pg['notes']),
             'details' => DetailEngine.clean(pg['details']),
             'hidden_layers' => Array(pg['hidden_layers']).map { |x| str(x, 60) }.uniq.first(50),
+            # Cánh chọn tay: đường dẫn persistent_id từ Group cha xuống instance cánh, vd "812/905".
+            'doors' => Array(pg['doors']).map(&:to_s).select { |x| x =~ %r{\A\d+(/\d+){0,30}\z} }.uniq.first(500),
+            'front_dims' => %w[auto exterior interior].include?(pg['front_dims'].to_s) ? pg['front_dims'].to_s : 'auto',
+            'dimoff' => clean_dimoff(pg['dimoff']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
               next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2})\z/) && v.is_a?(Array) && v.length == 2
 
@@ -127,6 +131,19 @@ module MTDesign
           n = project['pages'].length + 1
           n += 1 while used.include?(format('A-%02d', n))
           format('A-%02d', n)
+        end
+
+        # Dịch chuyển tay các hàng DIM: { view_key => { 'top'|'left'|'right' => mm giấy } }.
+        def clean_dimoff(raw)
+          return {} unless raw.is_a?(Hash)
+
+          raw.first(60).each_with_object({}) do |(k, v), h|
+            next unless v.is_a?(Hash) && k.to_s =~ /\A([a-z]+|sec:[A-Z]|det:\d{1,2})\z/
+
+            sides = v.select { |side, _| %w[top left right].include?(side.to_s) }
+                     .transform_values { |n| n.to_f.clamp(-60, 60).round(2) }
+            h[k.to_s] = sides unless sides.empty?
+          end
         end
 
         # nil = chưa có -> plugin tự đề xuất ở lần dựng đầu; [] = người dùng đã xoá hết.

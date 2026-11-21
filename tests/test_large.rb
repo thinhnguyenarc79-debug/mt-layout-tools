@@ -131,6 +131,8 @@ module X
     i.define_singleton_method(:hidden?) { false }
     i.define_singleton_method(:layer) { L.new(tag) }
     i.define_singleton_method(:name) { defn.name }
+    pid = (@pid = (@pid || 5000) + 1)
+    i.define_singleton_method(:persistent_id) { pid }
     i
   end
 end

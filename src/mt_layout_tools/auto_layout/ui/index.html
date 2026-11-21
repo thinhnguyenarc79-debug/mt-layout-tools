@@ -116,7 +116,7 @@
       <div id="paper"></div>
       <div id="empty"><div>Chưa có trang nào.<br>Chọn Group/Component trong SketchUp → bấm <b>⤓ Lấy đối tượng đang chọn</b> → <b>▶ Tự động triển khai</b>.</div></div>
     </div>
-    <div id="status"><span id="stMsg"></span><span id="stInfo"></span></div>
+    <div id="status"><span id="stMsg"></span><span id="sheetNav" style="display:none"><button id="shPrev">◀</button> <span id="shLbl"></span> <button id="shNext">▶</button></span><span id="stInfo"></span></div>
     <div id="busy"><span id="busyText">Đang dựng bản vẽ…</span> <span id="busyPct"></span>
       <div class="bar"><i id="busyBar"></i></div>
       <button id="cancel" title="Huỷ tác vụ đang chạy">Huỷ</button></div>
@@ -128,6 +128,12 @@
       <label>Tên bản vẽ</label><input id="pgName" type="text">
       <div class="row"><div><label>Ký hiệu</label><input id="pgNo" type="text"></div><div><label>Tỉ lệ</label><select id="pgScale"></select></div></div>
       <label>Hướng mặt trước</label><select id="pgFront"></select>
+      <label>DIM mặt đứng chính</label>
+      <select id="pgFrontDims">
+        <option value="auto">Tự động: có cánh → chỉ DIM cánh & ngoài</option>
+        <option value="exterior">Chỉ kích thước ngoài</option>
+        <option value="interior">Đầy đủ hệ ván (tủ không cánh)</option>
+      </select>
       <label>Hình chiếu trên trang</label><div id="pgViews" class="checks"></div>
       <div class="row">
         <div><label>Bỏ khoảng &lt; (mm)</label><input id="pgGap" type="number" min="0" step="1"></div>
@@ -135,6 +141,13 @@
       </div>
       <div class="checks"><label><input id="pgFill" type="checkbox"> Tô màu</label><label><input id="pgDims" type="checkbox"> Kích thước</label></div>
       <div class="btns"><button id="pgPick" title="Chọn đối tượng gốc trong SketchUp">Chọn trong SketchUp</button><button id="pgReset">Đặt lại bố cục</button></div>
+    </div>
+    <h3>Cánh tủ</h3>
+    <div class="body" id="doorBox">
+      <div id="doorList"></div>
+      <div class="btns"><button id="pickDoors" class="gold" title="Bấm đúp mở Group tủ, chọn các cánh bên trong, rồi bấm nút này">CHỌN CÁNH TRONG SKETCHUP</button>
+        <button id="clearDoors" title="Bỏ các cánh đã chọn tay">Bỏ cánh chọn tay</button></div>
+      <p class="hint">Cánh được nhận theo: chọn tay, thuộc tính "cánh/door", Tag cánh (mục 3), hoặc tên Group/Component chứa "cánh/door". Không đoán theo hình dạng.</p>
     </div>
     <h3>Mặt cắt</h3>
     <div class="body" id="secBox">
