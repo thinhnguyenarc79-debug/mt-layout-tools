@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "8d56f84ccde555b92e9995679490d1442f149d9e7d2a7cb7fe4ecb6ee87eb5c2",
-  "notes": "Tích hợp dàn trang MT Mặt Bằng vào bảng MT Layout Tools; nút Cập nhật nhận bản mới ngay (không chờ cache GitHub)."
+  "sha256": "71609289d67a72eb2f7f29d41dbd01d4c430be55a141d44785589a9e62b44106",
+  "notes": "Triển khai chi tiết A3 kiểu Betagon: hình chiếu, tháo cánh, trục đo, kích thước chuỗi, khung tên, bảng vật liệu, xuất PDF. Bỏ MT Mặt Bằng."
 }

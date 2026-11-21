@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 12px "Segoe UI", Arial, sans-serif; color: #1f2a24; background: #f6f5f0; }
+  header { background: #2F4A3A; color: #fff; padding: 10px 14px; position: sticky; top: 0; }
+  header h1 { margin: 0; font-size: 14px; }
+  header small { color: #C9A45C; }
+  main { padding: 10px 14px 70px; }
+  fieldset { border: 1px solid #d6d3c8; border-radius: 4px; margin: 0 0 10px; padding: 8px 10px; }
+  legend { font-weight: 600; color: #2F4A3A; padding: 0 4px; }
+  label { display: block; margin: 4px 0 2px; color: #5b6660; }
+  input[type=text], input[type=number], select { width: 100%; padding: 5px 6px; border: 1px solid #c9c6bb; border-radius: 3px; font: inherit; }
+  .row { display: flex; gap: 8px; } .row > div { flex: 1; }
+  .checks label { display: inline-block; margin-right: 10px; color: #1f2a24; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px 14px; background: #f6f5f0; border-top: 1px solid #d6d3c8; }
+  button { width: 100%; padding: 10px; border: 0; border-radius: 4px; background: #C9A45C; font: 600 13px "Segoe UI", Arial; cursor: pointer; }
+  button:hover { background: #b8934c; }
+  #msg { min-height: 16px; margin-top: 4px; font-size: 12px; }
+  .err { color: #b3261e; } .ok { color: #2F4A3A; }
+</style>
+</head>
+<body>
+<header><h1>Triển khai chi tiết A3</h1><small>Chọn 1 tủ/Group trong SketchUp rồi bấm Xuất PDF</small></header>
+<main>
+  <fieldset><legend>Hình chiếu</legend>
+    <div class="checks">
+      <label><input type="checkbox" name="v" value="front"> Mặt đứng</label>
+      <label><input type="checkbox" name="v" value="open"> Mặt đứng tháo cánh</label>
+      <label><input type="checkbox" name="v" value="left"> Bên trái</label>
+      <label><input type="checkbox" name="v" value="right"> Bên phải</label>
+      <label><input type="checkbox" name="v" value="back"> Mặt sau</label>
+      <label><input type="checkbox" name="v" value="top"> Mặt bằng</label>
+      <label><input type="checkbox" name="v" value="iso"> Trục đo (3D)</label>
+    </div>
+    <div class="row">
+      <div><label>Tỉ lệ</label>
+        <select id="scale"><option value="0">Tự động</option><option>5</option><option>10</option><option>15</option>
+          <option>20</option><option>25</option><option>30</option><option>40</option><option>50</option></select></div>
+      <div><label>Bỏ qua khoảng nhỏ hơn (mm)</label><input type="number" id="min_gap" min="0" step="1"></div>
+    </div>
+    <label>Tag cánh (ẩn khi vẽ "tháo cánh")</label><select id="door_tag"></select>
+    <label class="checks"><label><input type="checkbox" id="fill"> Tô màu vật liệu</label></label>
+  </fieldset>
+  <fieldset><legend>Khung tên</legend>
+    <label>Chủ đầu tư</label><input type="text" id="client">
+    <label>Công trình</label><input type="text" id="project">
+    <label>Địa điểm</label><input type="text" id="location">
+    <label>Đơn vị thiết kế</label><input type="text" id="company">
+    <label>Dòng phụ (địa chỉ, SĐT...)</label><input type="text" id="company_info">
+    <div class="row"><div><label>Chủ trì thiết kế</label><input type="text" id="lead"></div>
+      <div><label>Thiết kế</label><input type="text" id="designer"></div></div>
+    <div class="row"><div><label>Kiểm duyệt</label><input type="text" id="checker"></div>
+      <div><label>Thể hiện</label><input type="text" id="drafter"></div></div>
+    <label>Tên bản vẽ</label><input type="text" id="sheet_name">
+    <div class="row"><div><label>Ngày</label><input type="text" id="date"></div>
+      <div><label>Ký hiệu bản vẽ</label><input type="text" id="sheet_no"></div></div>
+  </fieldset>
+</main>
+<footer><button id="go">Xuất PDF A3</button><div id="msg"></div></footer>
+<script>
+  var TEXT = ['client','project','location','company','company_info','lead','designer','checker','drafter','sheet_name','date','sheet_no'];
+  function $(id) { return document.getElementById(id); }
+  function msg(t, cls) { var m = $('msg'); m.textContent = t; m.className = cls || ''; }
+  window.MTD = {
+    load: function (o) {
+      TEXT.forEach(function (k) { $(k).value = o[k] || ''; });
+      document.querySelectorAll('input[name=v]').forEach(function (c) { c.checked = (o.views || []).indexOf(c.value) >= 0; });
+      $('scale').value = String(o.scale || 0);
+      $('min_gap').value = o.min_gap;
+      $('fill').checked = !!o.fill;
+      var sel = $('door_tag'); sel.innerHTML = '<option value="">(không có)</option>';
+      (o.tags || []).forEach(function (t) { var op = document.createElement('option'); op.value = t; op.textContent = t; sel.appendChild(op); });
+      sel.value = o.door_tag || '';
+    },
+    done: function (t) { msg(t, 'ok'); $('go').disabled = false; },
+    error: function (t) { msg(t, 'err'); $('go').disabled = false; }
+  };
+  $('go').onclick = function () {
+    var o = {};
+    TEXT.forEach(function (k) { o[k] = $(k).value; });
+    o.views = [];
+    document.querySelectorAll('input[name=v]:checked').forEach(function (c) { o.views.push(c.value); });
+    o.scale = parseInt($('scale').value, 10);
+    o.min_gap = parseFloat($('min_gap').value) || 0;
+    o.fill = $('fill').checked;
+    o.door_tag = $('door_tag').value;
+    msg('Đang dựng bản vẽ...');
+    $('go').disabled = true;
+    sketchup.export(JSON.stringify(o));
+  };
+  window.onload = function () { sketchup.ready(); };
+</script>
+</body>
+</html>

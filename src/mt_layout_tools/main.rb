@@ -7,7 +7,7 @@ module MTDesign
     require File.join(PLUGIN_DIR, 'version')
     require File.join(PLUGIN_DIR, 'updater')
     require File.join(PLUGIN_DIR, 'panel')
-    require File.join(PLUGIN_DIR, 'mat_bang', 'main')
+    require File.join(PLUGIN_DIR, 'detail', 'detail')
 
     def self.icon(name)
       File.join(PLUGIN_DIR, 'icons', "#{name}.svg")
@@ -25,8 +25,8 @@ module MTDesign
       cmd_panel.small_icon      = icon('mt_layout')
       cmd_panel.large_icon      = icon('mt_layout')
 
-      cmd_matbang = UI::Command.new('Dàn trang – MT Mặt Bằng') { MatBang.show }
-      cmd_matbang.status_bar_text = 'Vẽ mặt bằng, triển khai hình chiếu, xuất PDF/DXF.'
+      cmd_matbang = UI::Command.new('Triển khai chi tiết A3') { Detail.show }
+      cmd_matbang.status_bar_text = 'Chọn 1 tủ/Group: dựng hình chiếu, kích thước, khung tên, xuất PDF A3.'
 
       cmd_update = UI::Command.new('Cập nhật') { Updater.check(silent: false) }
       cmd_update.status_bar_text = 'Kiểm tra và cài bản mới nhất từ GitHub.'
