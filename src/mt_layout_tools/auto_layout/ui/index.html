@@ -143,18 +143,30 @@
         <div><label>Làm tròn DIM</label><input id="pgRound" type="number" min="0.1" step="0.5"></div>
       </div>
       <div class="checks"><label><input id="pgFill" type="checkbox"> Tô màu</label><label><input id="pgDims" type="checkbox"> Kích thước</label></div>
+      <div class="row">
+        <div><label>Trục đo</label><select id="pgIsoMode"><option value="material">Tô màu vật liệu</option><option value="mono">Nét kỹ thuật đơn sắc</option><option value="none">Không tô mặt</option></select></div>
+        <div style="flex:none;align-self:flex-end"><label class="checks"><input id="pgIsoHidden" type="checkbox"> Nét khuất</label></div>
+      </div>
       <div class="btns"><button id="pgPick" title="Chọn đối tượng gốc trong SketchUp">Chọn trong SketchUp</button><button id="pgReset">Đặt lại bố cục</button></div>
     </div>
     <h3>Cấu tạo tủ</h3>
     <div class="body" id="partBox">
+      <div id="partModel" class="pmodel"></div>
       <div id="partCounts"></div>
       <div class="row" style="align-items:flex-end">
         <div><label>Gán phần đang chọn trong SketchUp là</label><select id="assignRole"></select></div>
-        <div style="flex:none"><button id="assignBtn" class="gold" title="Bấm đúp mở Group tủ, chọn 1 hoặc nhiều bộ phận, rồi bấm">Gán</button></div>
+        <div style="flex:none"><button id="assignBtn" class="gold" title="Bấm đúp mở Group tủ, chọn 1 hoặc nhiều bộ phận (Ctrl/Shift), rồi bấm">Gán</button></div>
       </div>
-      <input id="partSearch" type="text" placeholder="Lọc bộ phận..." style="margin-top:6px">
-      <div id="partList" class="list"></div>
-      <p class="hint">✓ = chắc chắn (gán tay, thuộc tính, Tag, tên). "đề xuất" = suy từ hình học/vật liệu – hãy xác nhận. 👁 chọn bộ phận trong SketchUp (không đổi model). Gán tay được lưu theo đường dẫn instance khi bấm 💾 Lưu.</p>
+      <div class="row" style="margin-top:6px">
+        <div><input id="partSearch" type="text" placeholder="Lọc tên / kích thước..."></div>
+        <div><select id="partFilter"></select></div>
+      </div>
+      <div class="bulk" id="partBulk">
+        <span id="partSelN">0 đã tick</span>
+        <select id="bulkRole"></select><button id="bulkBtn" class="gold">Gán</button><button id="bulkClear" title="Bỏ tick tất cả">✕</button>
+      </div>
+      <div id="partGroups"></div>
+      <p class="hint">Chỉ hiện bộ phận của model đang mở. Nhóm theo loại – bấm tiêu đề để mở/thu. Tick nhiều dòng (hoặc ☐ ở tiêu đề để tick cả nhóm) rồi "Gán mục đã tick". "Xác nhận" = chốt các mục tự nhận của nhóm thành gán tay. Bấm tên để chọn bộ phận trong SketchUp (không đổi model). ↶ để hoàn tác. Lưu riêng cho từng model theo đường dẫn instance khi bấm 💾 Lưu.</p>
     </div>
     <h3>Ký hiệu cánh</h3>
     <div class="body" id="symBox">

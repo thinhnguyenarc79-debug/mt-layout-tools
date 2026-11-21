@@ -62,6 +62,9 @@ module MTDesign
             'views' => s.key?('views') ? Array(s['views']).map(&:to_s) & VIEW_KEYS : d['views'],
             'scale' => s.fetch('scale', 0).to_i.clamp(0, 500),
             'fill' => s.key?('fill') ? s['fill'] == true : true,
+            # trục đo: material = màu vật liệu, mono = đơn sắc, none = không tô mặt; iso_hidden = vẽ nét khuất
+            'iso_mode' => %w[material mono none].include?(s['iso_mode'].to_s) ? s['iso_mode'].to_s : 'material',
+            'iso_hidden' => s['iso_hidden'] == true,
             'dims' => s.key?('dims') ? s['dims'] == true : true,
             'min_gap' => s.fetch('min_gap', 0).to_f.clamp(0, 1000),
             'round' => s.fetch('round', 1).to_f.clamp(0.1, 100),
@@ -127,7 +130,8 @@ module MTDesign
             if old
               # dựng lại trang: giữ ký hiệu cánh và các hình đã KHÓA (tỉ lệ / vị trí) – không tự mở khóa
               keep = (old['view_props'] || {}).select { |_k, vp| vp['scale_locked'] || vp['position_locked'] }
-              base = base.merge('view_props' => keep, 'door_symbols' => old['door_symbols'] || {},
+              # và phân loại bộ phận gán tay (roles) – không ghi đè dữ liệu người dùng khi triển khai lại
+              base = base.merge('view_props' => keep, 'door_symbols' => old['door_symbols'] || {}, 'roles' => old['roles'] || {},
                                 'offsets' => (old['offsets'] || {}).select { |k, _| keep[k] && keep[k]['position_locked'] })
               fresh = clean_page(base.merge('id' => old['id'], 'sheet_no' => old['sheet_no']))
               project['pages'][project['pages'].index(old)] = fresh
@@ -178,7 +182,7 @@ module MTDesign
           Array(legacy_doors).each { |pth| out[pth.to_s] = 'door' if pth.to_s =~ %r{\A\d+(/\d+){0,30}\z} } # chuyển từ bản 2.4
           return out unless raw.is_a?(Hash)
 
-          raw.first(2000).each do |k, v|
+          raw.first(10_000).each do |k, v|
             next unless k.to_s =~ %r{\A\d+(/\d+){0,30}\z} && PartClassifier::ROLES.key?(v.to_s)
 
             out[k.to_s] = v.to_s

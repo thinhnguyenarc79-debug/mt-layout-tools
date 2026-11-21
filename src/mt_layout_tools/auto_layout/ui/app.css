@@ -127,3 +127,29 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 #symList .it .nm { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #symList .it select { width: 120px; padding: 2px; font-size: 11px; }
 #propView select { width: 100%; }
+
+/* v2.7: quản lý cấu tạo theo nhóm, danh sách ảo */
+.pmodel { font-size: 11px; color: #2f3a33; font-weight: 600; margin-bottom: 4px; }
+.pmodel small { font-weight: 400; color: #8a8f8b; }
+#partCounts span { cursor: pointer; }
+#partCounts span.on { background: #C9A45C; color: #fff; }
+.bulk { display: flex; align-items: center; gap: 4px; margin: 6px 0 4px; font-size: 11px; }
+.bulk span { flex: none; white-space: nowrap; color: #7a817c; }
+.bulk select { flex: 1; min-width: 0; padding: 2px; font-size: 11px; }
+.bulk button { flex: none; }
+.bulk button { padding: 3px 6px; font-size: 11px; }
+.pgrp { border: 1px solid #e3e0d4; border-radius: 5px; margin-bottom: 4px; background: #fff; }
+.pgrp .gh { display: flex; align-items: center; gap: 5px; padding: 4px 6px; cursor: pointer; font-size: 12px; background: #f6f4ee; border-radius: 5px; }
+.pgrp .gh .tw { width: 10px; color: #8a8f8b; }
+.pgrp .gh .gn { flex: 1; font-weight: 600; }
+.pgrp .gh .gc { background: #ebe9e1; border-radius: 9px; padding: 0 7px; font-size: 11px; }
+.pgrp.u .gh .gc { background: #fbe3c7; }
+.pgrp .gh button { padding: 1px 6px; font-size: 10px; }
+.pgrp .vl { overflow-y: auto; position: relative; }
+.pgrp .vl .it { position: absolute; left: 0; right: 0; height: 26px; display: flex; align-items: center; gap: 4px; padding: 0 4px; border-top: 1px solid #f2f0ea; box-sizing: border-box; }
+.pgrp .vl .it.sel { background: #fbf6e8; }
+.pgrp .vl .it .nm { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.pgrp .vl .it .nm:hover { color: #9a7a35; text-decoration: underline; }
+.pgrp .vl .it .src { font-size: 9px; color: #8a8f8b; flex: none; }
+.pgrp .vl .it .src.sug { color: #c0772b; }
+.pgrp .vl .it select { width: 96px; padding: 1px; font-size: 11px; flex: none; }

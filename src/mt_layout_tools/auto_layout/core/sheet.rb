@@ -291,7 +291,10 @@ module MTDesign
           if v[:detail]
             draw_detail(cv, v, s, ox, oy, page)
           else
-            v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
+            draw_fills(cv, v, tf, page)
+            if v[:key] == 'iso' && page['iso_hidden'] && v[:hlines]
+              v[:hlines].each { |a, b| cv.line(tf.call(a), tf.call(b), 0.13, '#8A8F8B', [1.2, 0.8]) }
+            end
             polylines(v, tf).each { |pl| cv.polyline(pl, 0.25, INK) }
             draw_cut(cv, v, tf)
             DoorSymbols.draw(cv, v, tf, page['door_symbols'])
@@ -492,6 +495,17 @@ module MTDesign
         end
 
         # Ký hiệu đường cắt trên mặt đứng / mặt bằng: nét gạch chấm, vòng tròn chữ cái, mũi tên hướng nhìn.
+        # Chế độ tô trục đo: material (màu vật liệu), mono (đơn sắc xám theo hướng sáng), none (không tô).
+        # Mọi chế độ dùng chung 1 bộ mặt đã xử lý che khuất (BSP) – không tạo bản vẽ khác.
+        def draw_fills(cv, v, tf, page)
+          return unless page['fill']
+
+          mode = v[:key] == 'iso' ? page['iso_mode'].to_s : 'material'
+          return if mode == 'none'
+
+          v[:fills].each { |tri, color, gray| cv.poly(tri.map(&tf), mode == 'mono' && gray ? gray : color) }
+        end
+
         # Nhóm SVG class "secmark" để kéo đường cắt trực tiếp trên giấy.
         def section_marks(cv, v, s, ox, oy, sections)
           l, t = v[:origin]

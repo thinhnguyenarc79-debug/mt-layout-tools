@@ -404,7 +404,7 @@ module MTDesign
             info['materials'] = @mats.map { |m| m['name'] }
             info['extent'] = @extent ? { 'x' => @extent[0], 'y' => @extent[1], 'z' => @extent[2] } : nil
             info['doors'] = Array(@doors).map { |d| { 'name' => d['name'], 'reason' => d['reason'], 'path' => d['path'], 'sure' => d['sure'] } }
-            info['parts'] = Array(@parts).first(800).map do |pt|
+            info['parts'] = Array(@parts).first(5000).map do |pt|
               { 'path' => pt['path'], 'name' => pt['name'], 'role' => pt['role'], 'source' => pt['source'], 'sure' => pt['sure'],
                 'size' => pt['bounds'].map { |lo, hi| (hi - lo).round } }
             end

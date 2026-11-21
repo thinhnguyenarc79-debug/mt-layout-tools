@@ -186,6 +186,7 @@
     $('pgFront').value = p.front; setChecks($('pgViews'), p.views);
     $('pgFrontDims').value = p.front_dims || 'auto';
     $('pgGap').value = p.min_gap; $('pgRound').value = p.round; $('pgFill').checked = p.fill; $('pgDims').checked = p.dims;
+    $('pgIsoMode').value = p.iso_mode || 'material'; $('pgIsoHidden').checked = !!p.iso_hidden;
   }
 
   // ---------------- tỉ lệ riêng / khóa từng hình chiếu (v2.6) ----------------
@@ -468,42 +469,127 @@
     }).join('');
   }
   function renderDoors() { renderParts(); } // tương thích
-  function renderParts() {
-    var p = page(); if (!p) { $('partList').innerHTML = ''; $('partCounts').innerHTML = ''; return; }
-    if (!$('assignRole').options.length) $('assignRole').innerHTML = roleOpts('door', false);
-    var parts = (S.info && S.info.parts) || [], roles = p.roles || {}, cnt = {};
-    parts.forEach(function (pt) { cnt[pt.role] = (cnt[pt.role] || 0) + 1; });
-    $('partCounts').innerHTML = Object.keys(ROLES).filter(function (k) { return cnt[k]; }).map(function (k) {
-      return '<span class="' + (k === 'unknown' ? 'u' : '') + '">' + ROLES[k] + ': ' + cnt[k] + '</span>';
-    }).join('') + ((S.info && S.info.missing_roles && S.info.missing_roles.length) ? '<span class="u">⚠ ' + S.info.missing_roles.length + ' gán tay đã mất</span>' : '');
-    var q = $('partSearch').value.trim().toLowerCase();
-    var list = parts.filter(function (pt) { return !q || (pt.name + ' ' + ROLES[pt.role]).toLowerCase().indexOf(q) >= 0; });
-    $('partList').innerHTML = list.length ? list.slice(0, 300).map(function (pt) {
-      var manual = roles[pt.path];
-      return '<div class="it" data-path="' + esc(pt.path) + '"><span class="nm" title="' + esc(pt.source + ' · ' + pt.size.join('×') + ' mm') + '">' + esc(pt.name) +
-        ' <span class="src' + (pt.sure ? '' : ' sug') + '">' + (manual ? 'gán tay' : (pt.sure ? '✓' : 'đề xuất')) + '</span></span>' +
-        '<select class="role">' + roleOpts(manual || '', true).replace('value="' + (manual || pt.role) + '"', 'value="' + (manual || pt.role) + '" data-cur="1"') + '</select>' +
-        '<button class="hl" title="Chọn trong SketchUp">👁</button></div>';
-    }).join('') + (list.length > 300 ? '<div class="empty">… lọc để xem thêm (' + list.length + ')</div>' : '')
-      : '<div class="empty">' + (S.info ? 'Chưa có bộ phận (dựng trang trước).' : '') + '</div>';
-    // hiển thị vai trò hiện tại (tự nhận) trong nhãn của lựa chọn "(tự nhận)"
-    $('partList').querySelectorAll('.it').forEach(function (row) {
-      var pt = parts.filter(function (x) { return x.path === row.dataset.path; })[0];
-      var o = row.querySelector('option[value=""]'); if (o && pt) o.textContent = '(tự nhận: ' + ROLES[pt.role] + ')';
+  // ---------------- quản lý cấu tạo theo model (v2.7) ----------------
+  // Dữ liệu: S.info.parts của model đang mở (không quét lại SketchUp khi lọc/mở nhóm). Danh sách ảo: chỉ dựng các dòng đang thấy.
+  var ROW_H = 26, GRP_MAX = 11;
+  S.partOpen = { unknown: true }; S.partSel = {}; S.partSelPage = null;
+  function effRole(pt, roles) { return roles[pt.path] || pt.role || 'unknown'; }
+  function generic(name) { return !name || /^(group|nhóm|component|bộ phận|chi tiết)\s*#?\s*\d*$/i.test(String(name).trim()); }
+  function partLabel(pt) {
+    var sz = (pt.size || []).join('×');
+    return generic(pt.name) ? (sz ? sz + ' mm' : 'Bộ phận') : pt.name + (sz ? '  ·  ' + sz : '');
+  }
+  function partsView() {
+    var p = page(), parts = (S.info && S.info.parts) || [], roles = (p && p.roles) || {};
+    var q = $('partSearch').value.trim().toLowerCase(), f = $('partFilter').value;
+    return parts.filter(function (pt) {
+      var r = effRole(pt, roles), manual = !!roles[pt.path];
+      if (f === 'sug' && (manual || pt.sure)) return false;
+      if (f === 'manual' && !manual) return false;
+      if (f && f !== 'sug' && f !== 'manual' && r !== f) return false;
+      return !q || (partLabel(pt) + ' ' + pt.name + ' ' + ROLES[r]).toLowerCase().indexOf(q) >= 0;
     });
   }
-  $('partSearch').oninput = renderParts;
-  $('partList').addEventListener('change', function (e) {
-    if (!e.target.classList.contains('role')) return;
-    var p = page(), path = e.target.closest('.it').dataset.path;
+  function rowHtml(pt, roles, i) {
+    var manual = roles[pt.path], r = effRole(pt, roles), sel = !!S.partSel[pt.path];
+    return '<div class="it' + (sel ? ' sel' : '') + '" data-path="' + esc(pt.path) + '" style="top:' + i * ROW_H + 'px">' +
+      '<input type="checkbox" class="ck"' + (sel ? ' checked' : '') + '>' +
+      '<span class="nm" title="' + esc(pt.name + ' · ' + (pt.size || []).join('×') + ' mm · ' + pt.source + ' · ' + pt.path) + '">' + esc(partLabel(pt)) + '</span>' +
+      '<span class="src' + (manual || pt.sure ? '' : ' sug') + '">' + (manual ? 'gán tay' : (pt.sure ? '✓' : 'đề xuất')) + '</span>' +
+      '<select class="role">' + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '"' + (k === r ? ' selected' : '') + '>' + ROLES[k] + '</option>'; }).join('') +
+      (manual ? '<option value="">↺ bỏ gán tay</option>' : '') + '</select></div>';
+  }
+  function drawWindow(box) {
+    var rows = box._rows, roles = (page() && page().roles) || {};
+    var s = Math.max(0, Math.floor(box.scrollTop / ROW_H) - 2), e = Math.min(rows.length, s + Math.ceil((box.clientHeight || ROW_H * GRP_MAX) / ROW_H) + 5);
+    var h = ''; for (var i = s; i < e; i++) h += rowHtml(rows[i], roles, i);
+    box.firstChild.innerHTML = h;
+  }
+  function renderParts() {
+    var p = page();
+    if (!p) { $('partGroups').innerHTML = ''; $('partCounts').innerHTML = ''; $('partModel').innerHTML = ''; return; }
+    if (S.partSelPage !== p.id) { S.partSel = {}; S.partSelPage = p.id; }
+    if (!$('assignRole').options.length) {
+      $('assignRole').innerHTML = roleOpts('door', false); $('bulkRole').innerHTML = roleOpts('door', false) + '<option value="">↺ Bỏ gán tay</option>';
+      $('partFilter').innerHTML = '<option value="">Tất cả loại</option><option value="unknown">Chỉ chưa xác định</option><option value="sug">Chỉ "đề xuất" chưa chắc</option><option value="manual">Chỉ gán tay</option>' +
+        Object.keys(ROLES).filter(function (k) { return k !== 'unknown'; }).map(function (k) { return '<option value="' + k + '">Chỉ ' + ROLES[k] + '</option>'; }).join('');
+    }
+    var parts = (S.info && S.info.parts) || [], roles = p.roles || {}, cnt = {};
+    parts.forEach(function (pt) { var r = effRole(pt, roles); cnt[r] = (cnt[r] || 0) + 1; });
+    var total = (S.info && S.info.parts_total) || parts.length;
+    $('partModel').innerHTML = esc(p.name || 'Model') + ' <small>· ' + total + ' bộ phận' + (total > parts.length ? ' (hiện ' + parts.length + ')' : '') + '</small>';
+    var f = $('partFilter').value;
+    $('partCounts').innerHTML = Object.keys(ROLES).filter(function (k) { return cnt[k]; }).map(function (k) {
+      return '<span data-role="' + k + '" class="' + (k === 'unknown' ? 'u' : '') + (f === k ? ' on' : '') + '" title="Bấm để chỉ xem nhóm này">' + ROLES[k] + ': ' + cnt[k] + '</span>';
+    }).join('') + ((S.info && S.info.missing_roles && S.info.missing_roles.length) ? '<span class="u">⚠ ' + S.info.missing_roles.length + ' gán tay đã mất</span>' : '');
+    var list = partsView(), groups = {};
+    list.forEach(function (pt) { (groups[effRole(pt, roles)] = groups[effRole(pt, roles)] || []).push(pt); });
+    var keys = Object.keys(ROLES).filter(function (k) { return groups[k]; });
+    var box = $('partGroups');
+    if (!keys.length) { box.innerHTML = '<div class="empty">' + (S.info ? (parts.length ? 'Không có bộ phận khớp bộ lọc.' : 'Chưa có bộ phận (dựng trang trước).') : '') + '</div>'; updateSelN(); return; }
+    var one = keys.length === 1;
+    box.innerHTML = keys.map(function (k) {
+      var g = groups[k], open = one || !!S.partOpen[k], nSug = g.filter(function (pt) { return !roles[pt.path] && !pt.sure; }).length;
+      var allSel = g.every(function (pt) { return S.partSel[pt.path]; });
+      return '<div class="pgrp' + (k === 'unknown' ? ' u' : '') + '" data-role="' + k + '"><div class="gh"><span class="tw">' + (open ? '▾' : '▸') + '</span>' +
+        '<input type="checkbox" class="gck" title="Tick cả nhóm"' + (allSel ? ' checked' : '') + '><span class="gn">' + ROLES[k] + '</span>' +
+        (nSug && k !== 'unknown' ? '<button class="ok" title="Chốt ' + nSug + ' mục đề xuất của nhóm thành gán tay">Xác nhận ' + nSug + '</button>' : '') +
+        '<span class="gc">' + g.length + '</span></div>' +
+        (open ? '<div class="vl" style="height:' + Math.min(g.length, GRP_MAX) * ROW_H + 'px"><div style="height:' + g.length * ROW_H + 'px;position:relative"></div></div>' : '') + '</div>';
+    }).join('');
+    box.querySelectorAll('.pgrp').forEach(function (el) {
+      var vl = el.querySelector('.vl'); if (!vl) return;
+      vl._rows = groups[el.dataset.role]; vl.onscroll = function () { drawWindow(vl); }; drawWindow(vl);
+    });
+    updateSelN();
+  }
+  function updateSelN() {
+    var n = Object.keys(S.partSel).length;
+    $('partSelN').textContent = n + ' đã tick'; $('bulkBtn').disabled = !n;
+  }
+  function setRoles(paths, role, note) {
+    var p = page(); if (!p || !paths.length) return;
     snapshot(); p.roles = p.roles || {};
-    if (e.target.value) p.roles[path] = e.target.value; else delete p.roles[path];
-    changed(); msg('Đã gán. Bấm 💾 Lưu để ghi vào file SketchUp.', 'ok');
+    paths.forEach(function (x) { if (role) p.roles[x] = role; else delete p.roles[x]; });
+    changed(); requestRender(true);
+    msg((note || (role ? 'Đã gán ' + paths.length + ' bộ phận là "' + ROLES[role] + '"' : 'Đã bỏ gán tay ' + paths.length + ' bộ phận')) + '. ↶ để hoàn tác, 💾 Lưu để ghi vào file.', 'ok');
+  }
+  $('partSearch').oninput = renderParts;
+  $('partFilter').onchange = renderParts;
+  $('partCounts').addEventListener('click', function (e) {
+    var c = e.target.closest('span[data-role]'); if (!c) return;
+    $('partFilter').value = $('partFilter').value === c.dataset.role ? '' : c.dataset.role; renderParts();
   });
-  $('partList').addEventListener('click', function (e) {
-    if (!e.target.classList.contains('hl')) return;
-    var p = page(); call('highlight_part', { pid: p.pid, path: e.target.closest('.it').dataset.path });
+  $('partGroups').addEventListener('click', function (e) {
+    var gh = e.target.closest('.gh');
+    if (gh) {
+      var k = gh.parentNode.dataset.role;
+      if (e.target.classList.contains('gck')) return;
+      if (e.target.classList.contains('ok')) {
+        var p = page(), roles = (p && p.roles) || {};
+        var paths = ((S.info && S.info.parts) || []).filter(function (pt) { return !roles[pt.path] && !pt.sure && pt.role === k; }).map(function (pt) { return pt.path; });
+        setRoles(paths, k, 'Đã xác nhận ' + paths.length + ' bộ phận là "' + ROLES[k] + '"'); return;
+      }
+      S.partOpen[k] = !S.partOpen[k]; renderParts(); return;
+    }
+    var it = e.target.closest('.it'); if (!it) return;
+    if (e.target.classList.contains('nm')) { var pp = page(); call('highlight_part', { pid: pp.pid, path: it.dataset.path }); }
   });
+  $('partGroups').addEventListener('change', function (e) {
+    if (e.target.classList.contains('gck')) {
+      var k = e.target.closest('.pgrp').dataset.role, roles = (page() && page().roles) || {};
+      partsView().forEach(function (pt) { if (effRole(pt, roles) === k) { if (e.target.checked) S.partSel[pt.path] = 1; else delete S.partSel[pt.path]; } });
+      renderParts(); return;
+    }
+    var it = e.target.closest('.it'); if (!it) return;
+    if (e.target.classList.contains('ck')) {
+      if (e.target.checked) S.partSel[it.dataset.path] = 1; else delete S.partSel[it.dataset.path];
+      it.classList.toggle('sel', e.target.checked); updateSelN(); return;
+    }
+    if (e.target.classList.contains('role')) setRoles([it.dataset.path], e.target.value);
+  });
+  $('bulkBtn').onclick = function () { var paths = Object.keys(S.partSel); setRoles(paths, $('bulkRole').value); S.partSel = {}; updateSelN(); };
+  $('bulkClear').onclick = function () { S.partSel = {}; renderParts(); };
   $('assignBtn').onclick = function () { var p = page(); if (p) call('assign_parts', { pid: p.pid, role: $('assignRole').value }); };
 
   // ---------------- mặt cắt ----------------
@@ -1050,9 +1136,10 @@
     p.front_dims = $('pgFrontDims').value;
     p.min_gap = parseFloat($('pgGap').value) || 0; p.round = parseFloat($('pgRound').value) || 1;
     p.fill = $('pgFill').checked; p.dims = $('pgDims').checked;
+    p.iso_mode = $('pgIsoMode').value; p.iso_hidden = $('pgIsoHidden').checked;
     renderPages(); changed();
   }
-  ['pgName', 'pgNo', 'pgScale', 'pgFront', 'pgFrontDims', 'pgViews', 'pgGap', 'pgRound', 'pgFill', 'pgDims'].forEach(function (id) {
+  ['pgName', 'pgNo', 'pgScale', 'pgFront', 'pgFrontDims', 'pgViews', 'pgGap', 'pgRound', 'pgFill', 'pgDims', 'pgIsoMode', 'pgIsoHidden'].forEach(function (id) {
     $(id).addEventListener('change', readPage);
   });
   $('pgPick').onclick = function () { var p = page(); if (p) call('pick', String(p.pid)); };

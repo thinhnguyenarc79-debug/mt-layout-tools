@@ -61,6 +61,7 @@ tools/build_rbz.py                        đóng gói + version.json
 | Giữ đúng tỉ lệ đã chọn: tự chia nhiều tờ; mỗi tờ là 1 dòng ở TRANG GIẤY với mã riêng A-01, A-02…, nút Tờ trước/Tờ sau, PDF tờ / PDF tất cả | ✅ v2.4.1 |
 | Nhận diện cấu tạo tủ (gán tay > thuộc tính > Tag > tên > vật liệu kính > hình học-đề xuất); mục CẤU TẠO TỦ: đếm, gán vai trò, tô sáng bộ phận; DIM tháo cánh theo vách/đợt; chữ DIM né ký hiệu/chú thích; kéo từng số DIM; chuyển DIM chi tiết khi quá dày | ✅ v2.5.0 |
 | Tỉ lệ riêng từng hình (chuột phải: 1:5…1:100, tùy chỉnh, theo tỉ lệ trang), khóa tỉ lệ / khóa vị trí (biểu tượng khóa chỉ hiện khi biên tập), hình không vừa chuyển tờ – không thu nhỏ, báo xung đột; ký hiệu hướng mở cánh do người dùng chọn (mở trái/phải, đôi, lật lên/xuống, lùa, ngăn kéo; chỉnh nét/màu/kiểu) | ✅ v2.6.0 |
+| Sửa lỗi tam giác đè trong phối cảnh trục đo: tô mặt có che khuất chính xác bằng cây BSP (đúng cả khi mặt giao cắt, model xoay, mirror/mặt đảo); chế độ trục đo: tô màu vật liệu / đơn sắc / không tô + nét khuất. Quản lý cấu tạo theo model: nhóm theo loại thu gọn được, lọc, tick nhiều mục để gán hàng loạt, xác nhận cả nhóm, danh sách ảo cho hàng nghìn bộ phận; triển khai lại không ghi đè gán tay | ✅ v2.7.0 |
 | Job Engine máy trạng thái (không Fiber/Thread) | ✅ v2.3.1 |
 | Model lớn: cache definition, lưới không gian, 3 mức dự phòng, tiến trình + Huỷ, log | ✅ v2.1 |
 | Nét đứt cho cạnh khuất, phân cấp nét bao/cấu tạo, đường trục | ⏳ Giai đoạn 2 |

@@ -60,6 +60,11 @@ module MTDesign
             !doors.nil? && !doors.empty?
           end
 
+          # Cây BSP để tô mặt có che khuất đúng; dựng 1 lần cho mỗi bản trích, dùng chung mọi hình chiếu.
+          def fill_tree
+            @fill_tree ||= HiddenFill::Builder.new(triangles)
+          end
+
           # Bản sao KHÔNG có cánh (cho MẶT ĐỨNG THÁO CÁNH). Chỉ lọc dữ liệu đã đọc, không đụng file SKP.
           def without_doors
             e = []
@@ -240,6 +245,7 @@ module MTDesign
             @lines = []
             @notes = []
             @fills = []
+            @hlines = []
             @level = 1
             @busy = 0.0 # thời gian xử lý thực (không tính lúc nhường SketchUp)
           end
@@ -270,7 +276,9 @@ module MTDesign
               when :grid then return false unless phase_grid(job)
               when :hidden then return false unless phase_hidden(job)
               when :fill_sort then phase_fill_sort
+              when :fill_tree then return false unless phase_fill_tree(job)
               when :fill then return false unless phase_fill(job)
+              when :fill_old then return false unless phase_fill_old(job)
               when :done then return true
               end
             end
@@ -391,6 +399,11 @@ module MTDesign
                 Geometry.merge_visible(seg, @cur[:hidden]).each do |p, q|
                   @lines << [[p[0] - @l, p[1] - @t], [q[0] - @l, q[1] - @t]]
                 end
+                if @key == 'iso' # nét khuất (tùy chọn hiển thị) – phần bù của nét thấy
+                  Geometry.merge_hidden(seg, @cur[:hidden]).each do |p, q|
+                    @hlines << [[p[0] - @l, p[1] - @t], [q[0] - @l, q[1] - @t]]
+                  end
+                end
                 @cur = nil
               end
               @seg_i += 1
@@ -417,25 +430,60 @@ module MTDesign
             false
           end
 
+          # Tô mặt: cây BSP (che khuất chính xác, kể cả mặt giao cắt). Cây quá lớn -> cách dự phòng có ghi chú.
           def phase_fill_sort
+            @i = 0
             if @tris.length > MAX_FILL
               @notes << "#{@title}: #{@tris.length} tam giác – không tô màu để file nhẹ."
               @src = []
+              @phase = :fill_old
             else
-              shade = @key == 'iso'
-              @src = @tris
-              if shade && @tris.length < 4000
-                lim = [@w, @h].max / 8.0
-                @src = @tris.flat_map { |tr| Geometry.subdivide(tr, lim, 3) }
-              end
-              @src = @src.sort_by { |tr| tr[0][0][2] + tr[0][1][2] + tr[0][2][2] }
+              @tree = @cap.fill_tree
+              @phase = :fill_tree
             end
-            @i = 0
-            @phase = :fill
+          end
+
+          def phase_fill_tree(job)
+            unless @tree.step(job)
+              job.progress("#{@title}: xử lý che khuất mặt tô", 96)
+              return false
+            end
+            if @tree.failed?
+              @notes << "#{@title}: nhiều mặt cong chéo nhau, cây che khuất vượt giới hạn – mặt tô sắp theo độ sâu (nét vẽ vẫn đúng)."
+              @src = @tris.sort_by { |tr| tr[0][0][2] + tr[0][1][2] + tr[0][2][2] }
+              @phase = :fill_old
+            else
+              @walker = HiddenFill::Walker.new(@tree.nodes, HiddenFill.viewer_dir(@fn))
+              @phase = :fill
+            end
+            true
+          end
+
+          def add_fill(pts, mkey)
+            mats = @cap.materials
+            color = mkey && mats[mkey] ? mats[mkey]['color'] : DEFAULT_COLOR
+            if @key == 'iso'
+              gray = Geometry.shaded('#FFFFFF', pts)
+              color = Geometry.shaded(color, pts)
+            end
+            @fills << [pts.map { |pt| [pt[0] - @l, pt[1] - @t] }, color, gray]
           end
 
           def phase_fill(job)
-            shade = @key == 'iso'
+            done = @walker.each_piece(job) do |pl|
+              pts = pl[0].map { |p| @fn.call(p) }
+              a = 0.0
+              pts.each_with_index { |p, k| q = pts[(k + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1] }
+              add_fill(pts, pl[1]) if a.abs > 2.0e-4 # mặt nhìn nghiêng 90° (chỉ còn là 1 nét) bỏ qua
+            end
+            unless done
+              job.progress("#{@title}: tô màu (#{@fills.length} mảnh)", 97)
+              return false
+            end
+            finish_fill
+          end
+
+          def phase_fill_old(job)
             n = @src.length
             while @i < n
               if pause?(job, @i)
@@ -444,16 +492,17 @@ module MTDesign
               end
               tr = @src[@i]
               @i += 1
-              mats = @cap.materials
-              color = tr[4] && mats[tr[4]] ? mats[tr[4]]['color'] : DEFAULT_COLOR
-              color = Geometry.shaded(color, tr[5]) if shade
-              @fills << [tr[0].map { |pt| [pt[0] - @l, pt[1] - @t] }, color]
+              add_fill(tr[0], tr[4])
             end
+            finish_fill
+          end
+
+          def finish_fill
             stats = { 'tris' => @tris.length, 'edges_in' => @cap.edges.length, 'edges' => @segs.length,
                       'level' => @level, 'lines' => @lines.length, 'seconds' => @busy.round(2) }
-            @result = { key: @key, name: @title, lines: @lines, fills: @fills, w: @w, h: @h, dims: @key != 'iso',
+            @result = { key: @key, name: @title, lines: @lines, fills: @fills, hlines: @hlines, w: @w, h: @h, dims: @key != 'iso',
                         level: @level, notes: @notes, stats: stats, origin: [@l, @t], fn: @fn }
-            @tris = @src = @stamp = @grid = nil # giải phóng bộ nhớ
+            @tris = @src = @stamp = @grid = @tree = @walker = nil # giải phóng bộ nhớ
             @phase = :done
             true
           end
@@ -499,6 +548,23 @@ module MTDesign
           end
           vis << [cur, 1.0] if 1.0 - cur > EPS
           vis.map { |rg| rg.map { |k| [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k] } }
+             .reject { |p, q| Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.2 }
+        end
+
+        # Phần bị che của 1 cạnh (hợp các khoảng che) – để vẽ nét khuất khi người dùng bật.
+        def merge_hidden(seg, hidden)
+          return [] if hidden.empty?
+
+          a, b = seg
+          out = []
+          hidden.sort_by(&:first).each do |u, v|
+            if out.empty? || u > out[-1][1] + EPS
+              out << [u, v]
+            elsif v > out[-1][1]
+              out[-1][1] = v
+            end
+          end
+          out.map { |rg| rg.map { |k| [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k] } }
              .reject { |p, q| Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.2 }
         end
 

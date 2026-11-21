@@ -1,7 +1,7 @@
 {
-  "version": "2.6.0",
+  "version": "2.7.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "f621fbc10ad1463d09bcc91f7589cfaa4b970e80d3654a2d068e170b3d73540a",
-  "notes": "AUTO LAYOUT PRO v2.6.0: tỉ lệ riêng từng hình chiếu (chuột phải / bảng thuộc tính), khóa tỉ lệ & khóa vị trí, hình không vừa tự chuyển tờ không thu nhỏ + báo xung đột, ký hiệu hướng mở cánh do người dùng chọn (mở trái/phải, đôi, lật lên/xuống, lùa, ngăn kéo)"
+  "sha256": "c4466be8b4bbd0715b437ff80aad0688ab7e2fa01edee76e42c567d56c4a3c91",
+  "notes": "AUTO LAYOUT PRO v2.7.0: sửa lỗi tam giác nâu/trắng đè lên cánh ở phối cảnh trục đo (tô mặt che khuất chính xác bằng BSP), chế độ trục đo màu/đơn sắc/không tô + nét khuất; quản lý cấu tạo theo model: nhóm theo loại, lọc, tick gán hàng loạt, xác nhận cả nhóm, danh sách ảo; triển khai lại không ghi đè gán tay"
 }
