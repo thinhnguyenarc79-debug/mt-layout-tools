@@ -3,67 +3,119 @@
 <head>
 <meta charset="utf-8">
 <style>
+  @font-face { font-family: MTNoto; src: url('../fonts/MTNotoSans.ttf'); }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 12px "Segoe UI", Arial, sans-serif; color: #1f2a24; background: #f6f5f0; }
-  header { background: #2F4A3A; color: #fff; padding: 10px 14px; position: sticky; top: 0; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 12px "Segoe UI", Arial, sans-serif; color: #1f2a24; background: #e9e8e2; display: flex; }
+  #side { width: 340px; min-width: 340px; display: flex; flex-direction: column; background: #f6f5f0; border-right: 1px solid #d6d3c8; }
+  header { background: #2F4A3A; color: #fff; padding: 10px 14px; }
   header h1 { margin: 0; font-size: 14px; }
   header small { color: #C9A45C; }
-  main { padding: 10px 14px 70px; }
+  #form { flex: 1; overflow-y: auto; padding: 10px 12px; }
   fieldset { border: 1px solid #d6d3c8; border-radius: 4px; margin: 0 0 10px; padding: 8px 10px; }
   legend { font-weight: 600; color: #2F4A3A; padding: 0 4px; }
   label { display: block; margin: 4px 0 2px; color: #5b6660; }
-  input[type=text], input[type=number], select { width: 100%; padding: 5px 6px; border: 1px solid #c9c6bb; border-radius: 3px; font: inherit; }
+  input[type=text], input[type=number], select { width: 100%; padding: 5px 6px; border: 1px solid #c9c6bb; border-radius: 3px; font: inherit; background: #fff; }
   .row { display: flex; gap: 8px; } .row > div { flex: 1; }
   .checks label { display: inline-block; margin-right: 10px; color: #1f2a24; }
-  footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px 14px; background: #f6f5f0; border-top: 1px solid #d6d3c8; }
-  button { width: 100%; padding: 10px; border: 0; border-radius: 4px; background: #C9A45C; font: 600 13px "Segoe UI", Arial; cursor: pointer; }
-  button:hover { background: #b8934c; }
-  #msg { min-height: 16px; margin-top: 4px; font-size: 12px; }
-  .err { color: #b3261e; } .ok { color: #2F4A3A; }
+  .actions { padding: 8px 12px; border-top: 1px solid #d6d3c8; display: flex; gap: 6px; }
+  button { padding: 9px 10px; border: 0; border-radius: 4px; font: 600 12px "Segoe UI", Arial; cursor: pointer; }
+  .gold { background: #C9A45C; flex: 1; } .gold:hover { background: #b8934c; }
+  .ghost { background: #e4e2d9; } .ghost:hover { background: #d6d3c8; }
+  #msg { min-height: 16px; padding: 0 12px 8px; font-size: 12px; }
+  .err { color: #b3261e; } .ok { color: #2F4A3A; } .warn { color: #8a5a12; }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  #bar { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #f6f5f0; border-bottom: 1px solid #d6d3c8; }
+  #bar .info { margin-left: auto; color: #5b6660; }
+  #bar button { padding: 4px 9px; }
+  #stage { flex: 1; overflow: auto; padding: 20px; display: flex; }
+  #paper { margin: auto; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.18); line-height: 0; }
+  #paper svg { width: 100%; height: auto; display: block; }
+  #empty { margin: auto; color: #6b6b6b; font-size: 13px; text-align: center; line-height: 1.6; }
+  #busy { position: absolute; right: 18px; bottom: 14px; background: #2F4A3A; color: #fff; padding: 5px 10px; border-radius: 4px; display: none; }
 </style>
 </head>
 <body>
-<header><h1>Triển khai chi tiết A3</h1><small>Chọn 1 tủ/Group trong SketchUp rồi bấm Xuất PDF</small></header>
-<main>
-  <fieldset><legend>Hình chiếu</legend>
-    <div class="checks">
-      <label><input type="checkbox" name="v" value="front"> Mặt đứng</label>
-      <label><input type="checkbox" name="v" value="open"> Mặt đứng tháo cánh</label>
-      <label><input type="checkbox" name="v" value="left"> Bên trái</label>
-      <label><input type="checkbox" name="v" value="right"> Bên phải</label>
-      <label><input type="checkbox" name="v" value="back"> Mặt sau</label>
-      <label><input type="checkbox" name="v" value="top"> Mặt bằng</label>
-      <label><input type="checkbox" name="v" value="iso"> Trục đo (3D)</label>
-    </div>
-    <div class="row">
-      <div><label>Tỉ lệ</label>
-        <select id="scale"><option value="0">Tự động</option><option>5</option><option>10</option><option>15</option>
-          <option>20</option><option>25</option><option>30</option><option>40</option><option>50</option></select></div>
-      <div><label>Bỏ qua khoảng nhỏ hơn (mm)</label><input type="number" id="min_gap" min="0" step="1"></div>
-    </div>
-    <label>Tag cánh (ẩn khi vẽ "tháo cánh")</label><select id="door_tag"></select>
-    <label class="checks"><label><input type="checkbox" id="fill"> Tô màu vật liệu</label></label>
-  </fieldset>
-  <fieldset><legend>Khung tên</legend>
-    <label>Chủ đầu tư</label><input type="text" id="client">
-    <label>Công trình</label><input type="text" id="project">
-    <label>Địa điểm</label><input type="text" id="location">
-    <label>Đơn vị thiết kế</label><input type="text" id="company">
-    <label>Dòng phụ (địa chỉ, SĐT...)</label><input type="text" id="company_info">
-    <div class="row"><div><label>Chủ trì thiết kế</label><input type="text" id="lead"></div>
-      <div><label>Thiết kế</label><input type="text" id="designer"></div></div>
-    <div class="row"><div><label>Kiểm duyệt</label><input type="text" id="checker"></div>
-      <div><label>Thể hiện</label><input type="text" id="drafter"></div></div>
-    <label>Tên bản vẽ</label><input type="text" id="sheet_name">
-    <div class="row"><div><label>Ngày</label><input type="text" id="date"></div>
-      <div><label>Ký hiệu bản vẽ</label><input type="text" id="sheet_no"></div></div>
-  </fieldset>
-</main>
-<footer><button id="go">Xuất PDF A3</button><div id="msg"></div></footer>
+<div id="side">
+  <header><h1>Triển khai chi tiết A3</h1><small>Chọn 1 tủ/Group trong SketchUp</small></header>
+  <div id="form">
+    <fieldset><legend>Hình chiếu</legend>
+      <div class="checks">
+        <label><input type="checkbox" name="v" value="front"> Mặt đứng</label>
+        <label><input type="checkbox" name="v" value="open"> Mặt đứng tháo cánh</label>
+        <label><input type="checkbox" name="v" value="left"> Bên trái</label>
+        <label><input type="checkbox" name="v" value="right"> Bên phải</label>
+        <label><input type="checkbox" name="v" value="back"> Mặt sau</label>
+        <label><input type="checkbox" name="v" value="top"> Mặt bằng</label>
+        <label><input type="checkbox" name="v" value="iso"> Trục đo (3D)</label>
+      </div>
+      <div class="row">
+        <div><label>Tỉ lệ</label>
+          <select id="scale"><option value="0">Tự động (vừa khổ)</option><option>5</option><option>10</option><option>15</option>
+            <option>20</option><option>25</option><option>30</option><option>40</option><option>50</option></select></div>
+        <div><label>Bỏ qua khoảng &lt; (mm)</label><input type="number" id="min_gap" min="0" step="1"></div>
+      </div>
+      <label>Tag cánh (ẩn khi vẽ "tháo cánh")</label><select id="door_tag"></select>
+      <div class="checks"><label><input type="checkbox" id="fill"> Tô màu vật liệu</label></div>
+    </fieldset>
+    <fieldset><legend>Khung tên</legend>
+      <label>Chủ đầu tư</label><input type="text" id="client">
+      <label>Công trình</label><input type="text" id="project">
+      <label>Địa điểm</label><input type="text" id="location">
+      <label>Đơn vị thiết kế</label><input type="text" id="company">
+      <label>Dòng phụ (địa chỉ, SĐT...)</label><input type="text" id="company_info">
+      <div class="row"><div><label>Chủ trì thiết kế</label><input type="text" id="lead"></div>
+        <div><label>Thiết kế</label><input type="text" id="designer"></div></div>
+      <div class="row"><div><label>Kiểm duyệt</label><input type="text" id="checker"></div>
+        <div><label>Thể hiện</label><input type="text" id="drafter"></div></div>
+      <label>Tên bản vẽ</label><input type="text" id="sheet_name">
+      <div class="row"><div><label>Ngày</label><input type="text" id="date"></div>
+        <div><label>Ký hiệu bản vẽ</label><input type="text" id="sheet_no"></div></div>
+    </fieldset>
+  </div>
+  <div class="actions">
+    <button class="ghost" id="refresh" title="Đọc lại đối tượng đang chọn trong SketchUp">⟳ Lấy lại</button>
+    <button class="gold" id="go">Xuất PDF A3</button>
+  </div>
+  <div id="msg"></div>
+</div>
+<div id="main">
+  <div id="bar">
+    <button class="ghost" id="zout">−</button><button class="ghost" id="zfit">Vừa khung</button><button class="ghost" id="zin">+</button>
+    <span class="info" id="info">A3 ngang · 420×297</span>
+  </div>
+  <div id="stage"><div id="empty">Chọn 1 tủ/Group trong SketchUp rồi bấm <b>⟳ Lấy lại</b><br>để xem trước tờ bản vẽ.</div><div id="paper" style="display:none"></div></div>
+  <div id="busy">Đang dựng bản xem trước…</div>
+</div>
 <script>
   var TEXT = ['client','project','location','company','company_info','lead','designer','checker','drafter','sheet_name','date','sheet_no'];
+  var zoom = 0, timer = null;
   function $(id) { return document.getElementById(id); }
-  function msg(t, cls) { var m = $('msg'); m.textContent = t; m.className = cls || ''; }
+  function msg(t, cls) { var m = $('msg'); m.textContent = t || ''; m.className = cls || ''; }
+  function collect() {
+    var o = {};
+    TEXT.forEach(function (k) { o[k] = $(k).value; });
+    o.views = [];
+    document.querySelectorAll('input[name=v]:checked').forEach(function (c) { o.views.push(c.value); });
+    o.scale = parseInt($('scale').value, 10);
+    o.min_gap = parseFloat($('min_gap').value) || 0;
+    o.fill = $('fill').checked;
+    o.door_tag = $('door_tag').value;
+    return JSON.stringify(o);
+  }
+  function fit() {
+    var st = $('stage'), p = $('paper');
+    var w = st.clientWidth - 40, h = st.clientHeight - 40;
+    var base = Math.max(200, Math.min(w, h * 420 / 297));
+    p.style.width = (zoom === 0 ? base : base * zoom) + 'px';
+  }
+  function requestPreview(fresh) {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      $('busy').style.display = 'block';
+      fresh ? sketchup.refresh(collect()) : sketchup.preview(collect());
+    }, fresh ? 0 : 450);
+  }
   window.MTD = {
     load: function (o) {
       TEXT.forEach(function (k) { $(k).value = o[k] || ''; });
@@ -74,22 +126,32 @@
       var sel = $('door_tag'); sel.innerHTML = '<option value="">(không có)</option>';
       (o.tags || []).forEach(function (t) { var op = document.createElement('option'); op.value = t; op.textContent = t; sel.appendChild(op); });
       sel.value = o.door_tag || '';
+      requestPreview(true);
+    },
+    preview: function (r) {
+      $('busy').style.display = 'none';
+      if (r.error) {
+        $('paper').style.display = 'none'; $('empty').style.display = 'block';
+        $('empty').textContent = r.error; msg(r.error, 'err'); return;
+      }
+      $('empty').style.display = 'none'; $('paper').style.display = 'block';
+      $('paper').innerHTML = r.svg; fit();
+      $('info').textContent = 'A3 ngang · 420×297 · TL 1:' + r.scale;
+      r.note ? msg(r.note, 'warn') : msg('');
     },
     done: function (t) { msg(t, 'ok'); $('go').disabled = false; },
     error: function (t) { msg(t, 'err'); $('go').disabled = false; }
   };
+  $('form').addEventListener('input', function () { requestPreview(false); });
+  $('form').addEventListener('change', function () { requestPreview(false); });
+  $('refresh').onclick = function () { requestPreview(true); };
+  $('zin').onclick = function () { zoom = (zoom || 1) * 1.25; fit(); };
+  $('zout').onclick = function () { zoom = (zoom || 1) / 1.25; fit(); };
+  $('zfit').onclick = function () { zoom = 0; fit(); };
+  window.addEventListener('resize', fit);
   $('go').onclick = function () {
-    var o = {};
-    TEXT.forEach(function (k) { o[k] = $(k).value; });
-    o.views = [];
-    document.querySelectorAll('input[name=v]:checked').forEach(function (c) { o.views.push(c.value); });
-    o.scale = parseInt($('scale').value, 10);
-    o.min_gap = parseFloat($('min_gap').value) || 0;
-    o.fill = $('fill').checked;
-    o.door_tag = $('door_tag').value;
-    msg('Đang dựng bản vẽ...');
-    $('go').disabled = true;
-    sketchup.export(JSON.stringify(o));
+    msg('Đang xuất PDF...'); $('go').disabled = true;
+    sketchup.export(collect());
   };
   window.onload = function () { sketchup.ready(); };
 </script>

@@ -25,11 +25,15 @@ module MTDesign
             return
           end
           d = UI::HtmlDialog.new(dialog_title: 'Triển khai chi tiết A3', preferences_key: 'MTDesign_LayoutTools_Detail',
-                                 width: 460, height: 720, resizable: true, scrollable: true,
+                                 width: 1280, height: 820, min_width: 900, min_height: 600,
+                                 resizable: true, scrollable: false,
                                  style: UI::HtmlDialog::STYLE_DIALOG)
           d.set_file(File.join(__dir__, 'ui', 'detail.html'))
           d.add_action_callback('ready') { |_c| push(d, 'load', load_opts(Sketchup.active_model)) }
           d.add_action_callback('export') { |_c, json| export(d, json) }
+          d.add_action_callback('preview') { |_c, json| preview(d, json) }
+          d.add_action_callback('refresh') { |_c, json| @cache = nil; preview(d, json) }
+          d.set_on_closed { @cache = nil }
           @dialog = d
           d.show
         end
@@ -71,13 +75,7 @@ module MTDesign
           keep = opts.reject { |k, _| %w[sheet_name date].include?(k) }
           model.set_attribute(DICT, 'opts', JSON.generate(keep))
           Sketchup.status_text = 'MT Layout Tools: đang dựng hình chiếu...'
-          caps = { 'all' => Geometry.capture(model) }
-          if opts['views'].include?('open')
-            raise ArgumentError, 'Hình "Mặt đứng tháo cánh" cần chọn Tag cánh.' if opts['door_tag'].empty?
-
-            caps['open'] = Geometry.capture(model, [opts['door_tag']])
-          end
-          bytes = Sheet.build(caps, opts)
+          bytes, _info = Sheet.build(captures(model, opts), opts, :pdf)
           Sketchup.status_text = ''
           path = save(model, "#{opts['sheet_no']} #{opts['sheet_name']}", bytes)
           push(dialog, 'done', path ? "Đã xuất #{File.basename(path)}" : 'Đã hủy lưu.')
@@ -89,6 +87,38 @@ module MTDesign
           Sketchup.status_text = ''
           warn("[MT Layout Tools] #{e.class}: #{e.message}\n#{e.backtrace.first(6).join("\n")}")
           push(dialog, 'error', "Lỗi: #{e.message}")
+        end
+
+        # Hình học được lưu tạm theo đối tượng đang chọn để xem trước nhanh; bấm "Lấy lại" để đọc lại model.
+        def captures(model, opts)
+          sel = model.selection.first
+          id = sel.respond_to?(:entityID) ? sel.entityID : nil
+          @cache = nil if @cache && @cache[:id] != id
+          @cache ||= { id: id }
+          @cache['all'] ||= Geometry.capture(model)
+          caps = { 'all' => @cache['all'] }
+          if opts['views'].include?('open')
+            raise ArgumentError, 'Hình "Mặt đứng tháo cánh" cần chọn Tag cánh.' if opts['door_tag'].empty?
+
+            key = "open:#{opts['door_tag']}"
+            @cache[key] ||= Geometry.capture(model, [opts['door_tag']])
+            caps['open'] = @cache[key]
+          end
+          caps
+        end
+
+        def preview(dialog, json)
+          model = Sketchup.active_model
+          opts = clean(JSON.parse(json.to_s))
+          raise ArgumentError, 'Chọn ít nhất 1 hình chiếu.' if opts['views'].empty?
+
+          svg, info = Sheet.build(captures(model, opts), opts, :svg)
+          push(dialog, 'preview', { 'svg' => svg, 'scale' => info['scale'], 'note' => info['note'] })
+        rescue ArgumentError, JSON::ParserError => e
+          push(dialog, 'preview', { 'error' => e.message })
+        rescue StandardError => e
+          warn("[MT Layout Tools] #{e.class}: #{e.message}\n#{e.backtrace.first(6).join("\n")}")
+          push(dialog, 'preview', { 'error' => "Lỗi: #{e.message}" })
         end
 
         def save(model, title, bytes)

@@ -23,21 +23,67 @@ module MTDesign
       GREY = '#6B6B6B'.freeze
 
       # caps: { 'all' => Capture, 'open' => Capture (không có cánh) }
-      def build(caps, opts)
+      # fmt: :pdf -> chuỗi byte PDF; :svg -> chuỗi SVG (xem trước). Trả về [nội dung, { 'scale' =>, 'note' => }].
+      def build(caps, opts, fmt = :pdf)
         cap = caps['all']
         views = opts['views'].map { |k| Geometry.project(k == 'open' ? caps['open'] : cap, k) }
         raise ArgumentError, 'Chọn ít nhất 1 hình chiếu.' if views.empty?
 
         mats = cap.materials.values.first(14)
         legend_h = mats.empty? ? 0 : mats.length * 4.2 + 2
-        scale = opts['scale'].to_i
-        scale = pick_scale(views, legend_h) if scale <= 0
-        @out = ['1 J 1 j']
+        auto = pick_scale(views, legend_h)
+        want = opts['scale'].to_i
+        note = nil
+        if want <= 0
+          scale = auto
+        elsif want < auto
+          scale = auto
+          note = "Tỉ lệ 1:#{want} không vừa khổ A3 với #{views.length} hình, đã tự dùng 1:#{auto}."
+        else
+          scale = want
+        end
+        @fmt = fmt
+        @out = fmt == :pdf ? ['1 J 1 j'] : []
+        clip_begin
         draw_views(views, scale, legend_h, opts)
+        clip_end
         draw_legend(mats)
         draw_frame
         draw_title_block(opts, scale)
-        Pdf.pdf_file(@out.join("\n") + "\n", [PAPER_W * K, PAPER_H * K])
+        body = if fmt == :pdf
+                 Pdf.pdf_file(@out.join("\n") + "\n", [PAPER_W * K, PAPER_H * K])
+               else
+                 svg_doc
+               end
+        [body, { 'scale' => scale, 'note' => note }]
+      end
+
+      # Không cho hình vẽ tràn ra ngoài vùng bản vẽ / khung tên.
+      def clip_begin
+        x, y, x2, y2 = FRAME[0] + 1.2, FRAME[1] + 1.2, TB_X, FRAME[3] - 1.2
+        if @fmt == :pdf
+          @out << "q #{Pdf.xy(pt([x, y2]))} #{Pdf.number((x2 - x) * K)} #{Pdf.number((y2 - y) * K)} re W n"
+        else
+          @out << %(<clipPath id="area"><rect x="#{f(x)}" y="#{f(y)}" width="#{f(x2 - x)}" height="#{f(y2 - y)}"/></clipPath><g clip-path="url(#area)">)
+        end
+      end
+
+      def clip_end
+        @out << (@fmt == :pdf ? 'Q' : '</g>')
+      end
+
+      def f(n)
+        Pdf.number(n.round(3))
+      end
+
+      def esc(t)
+        t.to_s.gsub('&', '&amp;').gsub('<', '&lt;').gsub('>', '&gt;').gsub('"', '&quot;')
+      end
+
+      def svg_doc
+        %(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 #{f(PAPER_W)} #{f(PAPER_H)}" ) +
+          %(stroke-linecap="round" stroke-linejoin="round" font-family="MTNoto, 'Noto Sans', 'Segoe UI', Arial">) +
+          %(<rect width="#{f(PAPER_W)}" height="#{f(PAPER_H)}" fill="#fff"/>) + @out.join + '</svg>'
       end
 
       # ---------- bố cục (xếp nhiều hàng) ----------
@@ -49,15 +95,21 @@ module MTDesign
         v[:h] / s + (v[:dims] ? M_TOP : 4) + M_BOTTOM
       end
 
-      def rows_for(views, s, aw)
-        rows = [[]]
-        views.each do |v|
-          cur = rows.last
-          need = cur.sum { |q| box_w(q, s) } + GAP * cur.length + box_w(v, s)
-          rows << [] if !cur.empty? && need > aw
-          rows.last << v
+      # Thử mọi cách ngắt hàng (giữ thứ tự hình), chọn cách vừa khổ và cân đối nhất.
+      def rows_for(views, s, aw, ah = Float::INFINITY)
+        n = views.length
+        best = nil
+        (0...(1 << (n - 1))).each do |mask|
+          rows = [[views[0]]]
+          (1...n).each { |i| mask[i - 1] == 1 ? rows << [views[i]] : rows.last << views[i] }
+          w, h = layout_size(rows, s)
+          next if w > aw
+
+          fits = h <= ah
+          score = [fits ? 0 : 1, fits ? rows.length : h, (w / aw - h / ah).abs]
+          best = [score, rows] if best.nil? || (score <=> best[0]) < 0
         end
-        rows
+        best ? best[1] : views.map { |v| [v] }
       end
 
       def layout_size(rows, s)
@@ -66,41 +118,66 @@ module MTDesign
         [w, h]
       end
 
+      # Bố cục: các hình chiếu thẳng xếp theo hàng bên trái, Trục đo đặt thành cột riêng bên phải.
+      def plan(views, s, aw, ah)
+        iso = views.find { |v| !v[:dims] }
+        flat = views.reject { |v| v.equal?(iso) }
+        if iso && !flat.empty?
+          iw, ih = box_w(iso, s), box_h(iso, s)
+          rows = rows_for(flat, s, aw - iw - GAP, ah)
+          w, h = layout_size(rows, s)
+          { rows: rows, iso: iso, w: w + GAP + iw, h: [h, ih].max, rows_w: w }
+        else
+          rows = rows_for(views, s, aw, ah)
+          w, h = layout_size(rows, s)
+          { rows: rows, iso: nil, w: w, h: h, rows_w: w }
+        end
+      end
+
       def pick_scale(views, legend_h)
         aw = AREA[2] - AREA[0]
         ah = AREA[3] - AREA[1] - legend_h
         SCALES.each do |s|
-          rows = rows_for(views, s, aw)
-          w, h = layout_size(rows, s)
-          return s if w <= aw && h <= ah
+          pl = plan(views, s, aw, ah)
+          return s if pl[:w] <= aw && pl[:h] <= ah
         end
         raise ArgumentError, 'Đối tượng quá lớn cho khổ A3 kể cả tỉ lệ 1:100. Bớt hình chiếu hoặc chọn đối tượng nhỏ hơn.'
       end
 
+      def draw_view(v, s, x, base, opts)
+        ox = x + (v[:dims] ? M_LEFT : 2)
+        vw, vh = v[:w] / s, v[:h] / s
+        oy = base - vh
+        tf = ->(p) { [ox + p[0] / s, oy + p[1] / s] }
+        v[:fills].each { |tri, color| poly(tri.map(&tf), color) } if opts['fill']
+        v[:lines].each { |a, b| line(tf.call(a), tf.call(b), 0.25, INK) }
+        dims(v, s, ox, oy, opts['min_gap'].to_f) if v[:dims]
+        caption(v[:name], "TL 1:#{s}", ox + vw / 2, base + 6.5)
+      end
+
       def draw_views(views, s, legend_h, opts)
         aw = AREA[2] - AREA[0]
-        rows = rows_for(views, s, aw)
-        _, total_h = layout_size(rows, s)
-        y = AREA[1] + [(AREA[3] - AREA[1] - legend_h - total_h) / 2, 0].max
-        gap_mm = opts['min_gap'].to_f
-        rows.each do |row|
+        ah = AREA[3] - AREA[1] - legend_h
+        pl = plan(views, s, aw, ah)
+        x0 = AREA[0] + (aw - pl[:w]) / 2
+        y0 = AREA[1] + [(ah - pl[:h]) / 2, 0].max
+        y = y0
+        pl[:rows].each do |row|
           row_h = row.map { |v| box_h(v, s) }.max
-          base = y + row_h - M_BOTTOM # đường đáy chung của hàng
+          base = y + row_h - M_BOTTOM
           row_w = row.sum { |v| box_w(v, s) } + GAP * (row.length - 1)
-          x = AREA[0] + (aw - row_w) / 2
+          x = x0 + (pl[:rows_w] - row_w) / 2
           row.each do |v|
-            ox = x + (v[:dims] ? M_LEFT : 2)
-            vw, vh = v[:w] / s, v[:h] / s
-            oy = base - vh
-            tf = ->(p) { [ox + p[0] / s, oy + p[1] / s] }
-            v[:fills].each { |tri, color| poly(tri.map(&tf), color) } if opts['fill']
-            v[:lines].each { |a, b| line(tf.call(a), tf.call(b), 0.25, INK) }
-            dims(v, s, ox, oy, gap_mm) if v[:dims]
-            caption(v[:name], "TL 1:#{s}", ox + vw / 2, base + 6.5)
+            draw_view(v, s, x, base, opts)
             x += box_w(v, s) + GAP
           end
           y += row_h + GAP
         end
+        return unless pl[:iso]
+
+        iso = pl[:iso]
+        ix = x0 + pl[:rows_w] + GAP
+        draw_view(iso, s, ix, y0 + (pl[:h] + box_h(iso, s)) / 2 - M_BOTTOM, opts)
       end
 
       # ---------- kích thước ----------
@@ -297,15 +374,29 @@ module MTDesign
       end
 
       def line(a, b, w, color)
+        if @fmt == :svg
+          @out << %(<path d="M#{f(a[0])} #{f(a[1])}L#{f(b[0])} #{f(b[1])}" stroke="#{color}" stroke-width="#{f(w)}"/>)
+          return
+        end
         @out << "#{Pdf.number(w * K)} w #{rgb(color)} RG #{xy(a)} m #{xy(b)} l S"
       end
 
       def poly(points, color)
+        if @fmt == :svg
+          d = 'M' + points.map { |p| "#{f(p[0])} #{f(p[1])}" }.join('L') + 'Z'
+          @out << %(<path d="#{d}" fill="#{color}" stroke="#{color}" stroke-width="0.08"/>)
+          return
+        end
         path = "#{xy(points[0])} m " + points[1..-1].map { |p| "#{xy(p)} l" }.join(' ') + ' h'
         @out << "#{rgb(color)} rg #{rgb(color)} RG #{Pdf.number(0.08 * K)} w #{path} B"
       end
 
       def rect(x, y, w, h, fill, stroke, wt = 0.2)
+        if @fmt == :svg
+          @out << %(<rect x="#{f(x)}" y="#{f(y)}" width="#{f(w)}" height="#{f(h)}" fill="#{fill || 'none'}") +
+                  (stroke ? %( stroke="#{stroke}" stroke-width="#{f(wt)}") : '') + '/>'
+          return
+        end
         r = "#{Pdf.xy(pt([x, y + h]))} #{Pdf.number(w * K)} #{Pdf.number(h * K)} re"
         if fill && stroke
           @out << "#{rgb(fill)} rg #{rgb(stroke)} RG #{Pdf.number(wt * K)} w #{r} B"
@@ -324,6 +415,12 @@ module MTDesign
       def text(s, cx, cy, size, angle, color)
         return if s.to_s.empty?
 
+        if @fmt == :svg
+          rot = angle.zero? ? '' : %( transform="rotate(#{f(-angle)} #{f(cx)} #{f(cy)})")
+          @out << %(<text x="#{f(cx)}" y="#{f(cy + size * 0.36)}" font-size="#{f(size)}" fill="#{color}" ) +
+                  %(text-anchor="middle"#{rot}>#{esc(s)}</text>)
+          return
+        end
         @out << Pdf.text_command(s.to_s, pt([cx, cy]), size * K, angle, color)
       end
 

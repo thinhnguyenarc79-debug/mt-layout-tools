@@ -198,12 +198,28 @@ module MTDesign
           end
         end
         shade = key == 'iso'
+        limit = [r - l, b - t].max / 8.0
+        tris = tris.flat_map { |tr| subdivide(tr, limit, 3) } if shade
         fills = tris.sort_by { |p, _, _, _, _| p.sum { |pt| pt[2] } }.map do |p, _, _, mkey, raw|
           color = mkey ? cap.materials[mkey]['color'] : DEFAULT_COLOR
           color = shaded(color, raw) if shade
           [p.map { |pt| [pt[0] - l, pt[1] - t] }, color]
         end
         { name: title, lines: lines, fills: fills, w: r - l, h: b - t, dims: key != 'iso' }
+      end
+
+      # Chia nhỏ tam giác lớn để tô màu đúng thứ tự trước/sau (thuật toán hoạ sĩ).
+      def subdivide(tr, limit, depth)
+        p, area, _bb, mkey, raw = tr
+        a, b, c = p
+        long = [[a, b], [b, c], [c, a]].map { |x, y| Math.hypot(x[0] - y[0], x[1] - y[1]) }.max
+        return [tr] if depth.zero? || long <= limit
+
+        mid = ->(x, y) { x.zip(y).map { |m, n| (m + n) / 2.0 } }
+        ab, bc, ca = mid.call(a, b), mid.call(b, c), mid.call(c, a)
+        [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]].flat_map do |q|
+          subdivide([q, area / 4, nil, mkey, raw], limit, depth - 1)
+        end
       end
 
       def shaded(hex, tri)
