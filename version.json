@@ -1,7 +1,7 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "47f1ed36cbd91c0fbb3d1743ef9c6f5d46315bc62a4eea8ce838d8a99d4427d7",
-  "notes": "AUTO LAYOUT PRO – Giai đoạn 1: trình biên tập dàn trang (danh sách model, Tag, nhiều trang, kéo hình chiếu, lưu dự án), xuất PDF nhiều trang và SVG. Giữ nguyên biểu tượng MT và nút Cập nhật."
+  "sha256": "4d10829ecaf34748cf7b2dd9058863b67a1a2dea29a16b8f03dcb253261b1855",
+  "notes": "Danh sách model chỉ lấy Group/Component đang chọn trong SketchUp (không quét cả file, không tách Group con). Thêm nút Lấy đối tượng đang chọn, nút 👁, kích thước Rộng×Cao×Sâu đúng trục, thông báo khi chưa chọn."
 }

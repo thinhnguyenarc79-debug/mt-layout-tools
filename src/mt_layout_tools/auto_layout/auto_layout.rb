@@ -26,6 +26,7 @@ module MTDesign
         def show
           if @dialog && @dialog.visible?
             @dialog.bring_to_front
+            guard(@dialog, 'scan') { on_scan(@dialog, nil) } # bấm lại nút = lấy đối tượng vừa chọn
             return
           end
           @cache = {}
@@ -71,14 +72,22 @@ module MTDesign
         end
 
         # ---------------- callbacks ----------------
+        def selection_payload
+          models = ModelScanner.models(model)
+          { 'models' => models, 'tags' => ModelScanner.tags(model),
+            'notice' => models.empty? ? ModelScanner::NO_SELECTION : nil }
+        end
+
         def on_ready(d, _arg)
-          push(d, 'init', { 'project' => ProjectStore.load(model), 'models' => ModelScanner.models(model),
-                            'tags' => ModelScanner.tags(model), 'views' => Geometry::VIEWS.transform_values(&:first),
+          sel = selection_payload
+          push(d, 'init', { 'project' => ProjectStore.load(model), 'models' => sel['models'], 'notice' => sel['notice'],
+                            'tags' => sel['tags'], 'views' => Geometry::VIEWS.transform_values(&:first),
                             'papers' => Sheet::PAPERS.keys, 'scales' => Sheet::SCALES })
         end
 
+        # "Lấy đối tượng đang chọn" / "Quét lại": chỉ đọc selection hiện tại, không quét cả file.
         def on_scan(d, _arg)
-          push(d, 'models', { 'models' => ModelScanner.models(model), 'tags' => ModelScanner.tags(model) })
+          push(d, 'models', selection_payload)
         end
 
         # Tạo trang cho các model được chọn. arg: { project, pids }.
@@ -88,17 +97,10 @@ module MTDesign
           pids = Array(data['pids']).map(&:to_i).uniq
           raise ArgumentError, 'Chưa chọn model nào để triển khai.' if pids.empty?
 
-          created = []
-          pids.each do |pid|
+          created = ProjectStore.add_pages(project, pids, lambda do |pid|
             e = ModelScanner.find(model, pid)
-            next unless e
-
-            no = format('A-%02d', project['pages'].length + 1)
-            page = ProjectStore.clean_page(project['defaults'].merge('pid' => pid, 'name' => Geometry.instance_name(e),
-                                                                     'sheet_no' => no, 'offsets' => {}))
-            project['pages'] << page
-            created << page['id']
-          end
+            e && Geometry.instance_name(e)
+          end)
           raise ArgumentError, 'Không tìm thấy model đã chọn (có thể đã bị xoá).' if created.empty?
 
           push(d, 'project', { 'project' => project, 'open' => created.first,

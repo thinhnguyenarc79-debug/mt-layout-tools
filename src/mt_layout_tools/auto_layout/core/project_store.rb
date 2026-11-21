@@ -81,6 +81,22 @@ module MTDesign
           )
         end
 
+        # Tạo 1 trang cho mỗi pid được tick. finder: lambda(pid) -> [tên] hoặc nil nếu không còn đối tượng.
+        # Chỉ tạo đúng các pid truyền vào, không thêm model nào khác.
+        def add_pages(project, pids, finder)
+          created = []
+          pids.map(&:to_i).uniq.each do |pid|
+            name = finder.call(pid)
+            next unless name
+
+            no = format('A-%02d', project['pages'].length + 1)
+            page = clean_page(project['defaults'].merge('pid' => pid, 'name' => name, 'sheet_no' => no, 'offsets' => {}))
+            project['pages'] << page
+            created << page['id']
+          end
+          created
+        end
+
         def load(model)
           json = model.get_attribute(DICT, 'project')
           json ? clean(JSON.parse(json)) : default_project

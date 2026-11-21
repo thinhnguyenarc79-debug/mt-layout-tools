@@ -2,8 +2,6 @@
 
 Plugin SketchUp (2021–2026, Windows) tự động triển khai bản vẽ nội thất cho MT Design: chọn model → tự dựng hình chiếu có khử nét khuất, ghi kích thước đo từ hình học thật, dàn lên khổ giấy có khung tên, xuất PDF/SVG.
 
-![Giao diện](docs/giao-dien-v2.png)
-
 ## 1. Cài đặt
 - **Lần đầu:** tải `dist/mt_layout_tools.rbz` → SketchUp → **Extensions → Extension Manager → Install Extension** → chọn file → khởi động lại SketchUp.
 - **Cập nhật:** bấm biểu tượng **MT** trên thanh công cụ → **Cập nhật** (đọc `version.json` qua GitHub API, kiểm SHA-256, cài đè, không phải cài lại).
@@ -12,7 +10,7 @@ Plugin SketchUp (2021–2026, Windows) tự động triển khai bản vẽ nộ
 1. Bấm biểu tượng **MT** → **AUTO LAYOUT PRO**.
 2. Cột trái:
    - **1. Dự án:** tên, khổ giấy (A4–A0), mở/lưu `.json`.
-   - **2. Danh sách model:** các Group/Component cấp ngoài cùng + đối tượng đang chọn (kích thước mm). Tick model → **▶ Tự động triển khai** (mỗi model 1 tờ). Nút ◎ chọn đối tượng trong SketchUp.
+   - **2. Danh sách model:** CHỈ các Group/Component bạn đang chọn trong SketchUp (chọn trước khi mở, hoặc chọn rồi bấm **⤓ Lấy đối tượng đang chọn**). Group/Component con bên trong được phân tích như bộ phận của Group cha, không tách thành model riêng. Mỗi dòng: tick, tên, Rộng × Cao × Sâu (mm), nút 👁 chọn/phóng tới đối tượng. Tick model → **▶ Tự động triển khai** (mỗi model 1 tờ). Không chọn gì → plugin báo, không tự lấy model khác.
    - **3. Tag SketchUp:** bỏ tick Tag để loại khỏi bản vẽ (không đổi model); chọn **Tag cánh** cho "Mặt đứng tháo cánh".
    - **4. Dàn trang tự động:** hình chiếu mặc định, tỉ lệ, hướng mặt trước, gộp khoảng nhỏ, làm tròn DIM, tô màu.
    - **5. Trang giấy:** chọn/sắp xếp/xoá/đổi tên (bấm đúp).
@@ -47,7 +45,7 @@ tools/build_rbz.py                        đóng gói + version.json
 |---|---|
 | RBZ cài được, nút Cập nhật | ✅ |
 | Đọc model thật: Group/Component lồng nhau, transformation tích luỹ, xoay bất kỳ, ẩn/Tag ẩn, đơn vị → mm | ✅ |
-| Danh sách model + Tag, lọc Tag | ✅ |
+| Danh sách model chỉ từ selection + Tag, lọc Tag | ✅ |
 | Hướng mặt trước (-Y/+Y/-X/+X) | ✅ |
 | Mặt đứng trước/sau/trái/phải, mặt bằng, mặt đáy, trục đo | ✅ |
 | Khử nét khuất | ✅ (đường khuất bị bỏ, chưa vẽ nét đứt) |
@@ -67,7 +65,7 @@ tools/build_rbz.py                        đóng gói + version.json
 ```
 ruby tests/run_all.rb
 ```
-Kiểm: kích thước hình chiếu, khử nét khuất (che toàn phần/một phần), xoay mặt trước, DIM khoang không đều, DIM chuỗi, gộp & làm tròn, hình nằm trong vùng vẽ & không chồng nhau, tự đổi tỉ lệ, kẹp khi kéo, SVG hợp lệ, PDF nhiều trang đúng khổ, làm sạch dữ liệu dự án.
+Kiểm: chỉ lấy đối tượng đang chọn (file 50 Group chọn 1; chọn 3; Group cha chứa 20 con; không chọn; chỉ tạo trang cho model được tick), kích thước Rộng×Cao×Sâu đúng trục, kích thước hình chiếu, khử nét khuất (che toàn phần/một phần), xoay mặt trước, DIM khoang không đều, DIM chuỗi, gộp & làm tròn, hình nằm trong vùng vẽ & không chồng nhau, tự đổi tỉ lệ, kẹp khi kéo, SVG hợp lệ, PDF nhiều trang đúng khổ, làm sạch dữ liệu dự án.
 Phần cần kiểm trong SketchUp: đọc model thật (`model_scanner`, `Geometry.capture`), hộp thoại, lưu thuộc tính, hộp lưu file.
 
 ## 6. Sửa lỗi & nâng cấp

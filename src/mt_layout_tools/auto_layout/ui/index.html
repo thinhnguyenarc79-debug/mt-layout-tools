@@ -47,11 +47,12 @@
         <input id="mSearch" type="text" placeholder="Tìm theo tên...">
         <div id="mList" class="list"></div>
         <div class="btns">
-          <button id="scan" title="Quét lại model và Tag trong SketchUp">⟳ Quét lại</button>
-          <button id="mAll">Chọn hết</button><button id="mNone">Bỏ chọn</button>
+          <button id="getSel" class="gold" title="Đọc lại các Group/Component đang chọn trong SketchUp">⤓ Lấy đối tượng đang chọn</button>
+          <button id="scan" title="Quét lại (chỉ đọc đối tượng đang chọn, không quét cả file)">⟳ Quét lại</button>
+          <button id="mAll">Tick hết</button><button id="mNone">Bỏ tick</button>
         </div>
         <button id="generate" class="gold wide">▶ Tự động triển khai</button>
-        <p class="hint">Tick các model rồi bấm Tự động triển khai: mỗi model tạo 1 tờ theo mục 4. Đối tượng đang chọn trong SketchUp được tick sẵn.</p>
+        <p class="hint">Chỉ hiện các Group/Component bạn đang chọn trong SketchUp (Group con bên trong được tính là bộ phận của Group cha). Tick model cần triển khai rồi bấm ▶ — mỗi model 1 tờ. Kích thước: Rộng × Cao × Sâu (mm).</p>
       </div>
     </section>
     <section data-sec="tags">
@@ -104,7 +105,7 @@
   <main id="center">
     <div id="stage">
       <div id="paper"></div>
-      <div id="empty">Chưa có trang nào.<br>Tick model ở mục <b>2. Danh sách model</b> rồi bấm <b>▶ Tự động triển khai</b>.</div>
+      <div id="empty"><div>Chưa có trang nào.<br>Chọn Group/Component trong SketchUp → bấm <b>⤓ Lấy đối tượng đang chọn</b> → <b>▶ Tự động triển khai</b>.</div></div>
     </div>
     <div id="status"><span id="stMsg"></span><span id="stInfo"></span></div>
     <div id="busy">Đang dựng bản vẽ…</div>

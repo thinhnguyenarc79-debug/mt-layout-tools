@@ -20,12 +20,14 @@
   window.ALP = {
     on: function (kind, d) {
       if (kind === 'init') {
-        S.project = d.project; S.models = d.models; S.tags = d.tags; S.viewNames = d.views; S.scales = d.scales;
-        S.models.forEach(function (m) { if (m.selected) S.picked[m.pid] = true; });
+        S.project = d.project; S.tags = d.tags; S.viewNames = d.views; S.scales = d.scales;
+        setModels(d.models, d.notice);
         buildStatic(); renderAll();
+        if (d.notice) msg(d.notice, 'warn');
         if (S.project.pages.length) openPage(S.project.pages[0].id);
       } else if (kind === 'models') {
-        S.models = d.models; S.tags = d.tags; renderModels(); renderTags(); msg('Đã quét lại model và Tag.', 'ok');
+        S.tags = d.tags; setModels(d.models, d.notice); renderModels(); renderTags();
+        d.notice ? msg(d.notice, 'warn') : msg('Đã lấy ' + d.models.length + ' đối tượng đang chọn.', 'ok');
       } else if (kind === 'project') {
         snapshot(); S.project = d.project; markDirty(); renderAll();
         openPage(d.open || (S.project.pages[0] && S.project.pages[0].id));
@@ -58,6 +60,12 @@
   }
   function markDirty() { S.dirty = true; }
   function changed(render) { markDirty(); if (render !== false) requestRender(); }
+
+  // Danh sách = đúng các đối tượng đang chọn trong SketchUp; tất cả được tick sẵn.
+  function setModels(models, notice) {
+    S.models = models || []; S.notice = notice || null; S.picked = {};
+    S.models.forEach(function (m) { S.picked[m.pid] = true; });
+  }
 
   // ---------------- dựng giao diện tĩnh ----------------
   function buildStatic() {
@@ -98,9 +106,10 @@
       return '<div class="it' + (S.picked[m.pid] ? ' sel' : '') + '" data-pid="' + m.pid + '">' +
         '<input type="checkbox"' + (S.picked[m.pid] ? ' checked' : '') + '>' +
         '<span class="nm" title="' + esc(m.kind + ' · Tag: ' + (m.tag || '-')) + '">' + esc(m.name) + '</span>' +
-        '<span class="sz">' + m.size.join('×') + '</span>' +
-        '<button class="pick" title="Chọn trong SketchUp">◎</button></div>';
-    }).join('') : '<div class="empty">Không có Group/Component nào.</div>';
+        '<span class="sz" title="Rộng × Cao × Sâu (mm)">' + m.size.join(' × ') + '</span>' +
+        '<button class="pick" title="Chọn và phóng tới đối tượng trong SketchUp">👁</button></div>';
+    }).join('') : '<div class="empty">' + esc(S.models.length ? 'Không có đối tượng khớp từ khoá.' : (S.notice ||
+      'Bạn chưa chọn Group hoặc Component trong SketchUp. Hãy chọn đối tượng cần triển khai trước.')) + '</div>';
   }
 
   function renderTags() {
@@ -117,10 +126,9 @@
     var ps = S.project.pages;
     $('pgCount').textContent = ps.length;
     $('pgList').innerHTML = ps.length ? ps.map(function (p) {
-      var gone = !S.models.some(function (m) { return m.pid === p.pid; });
       return '<div class="it' + (p.id === S.cur ? ' cur' : '') + '" data-id="' + p.id + '">' +
         '<span class="no">' + esc(p.sheet_no) + '</span><span class="nm">' + esc(p.name) + '</span>' +
-        '<span class="sz">' + p.views.length + ' hình' + (gone ? ' · ⚠' : '') + '</span></div>';
+        '<span class="sz">' + p.views.length + ' hình</span></div>';
     }).join('') : '<div class="empty">Chưa có trang.</div>';
     $('empty').style.display = ps.length ? 'none' : 'flex';
     $('paper').style.display = ps.length ? 'block' : 'none';
@@ -334,10 +342,12 @@
     S.picked[pid] = !S.picked[pid]; renderModels();
   };
   $('scan').onclick = function () { call('scan', null); };
+  $('getSel').onclick = function () { call('scan', null); };
   $('mAll').onclick = function () { S.models.forEach(function (m) { S.picked[m.pid] = true; }); renderModels(); };
   $('mNone').onclick = function () { S.picked = {}; renderModels(); };
   $('generate').onclick = function () {
     var pids = S.models.filter(function (m) { return S.picked[m.pid]; }).map(function (m) { return m.pid; });
+    if (!S.models.length) { msg(S.notice || 'Bạn chưa chọn Group hoặc Component trong SketchUp. Hãy chọn đối tượng cần triển khai trước.', 'err'); return; }
     if (!pids.length) { msg('Tick ít nhất 1 model ở danh sách.', 'err'); return; }
     call('generate', { project: S.project, pids: pids });
   };
