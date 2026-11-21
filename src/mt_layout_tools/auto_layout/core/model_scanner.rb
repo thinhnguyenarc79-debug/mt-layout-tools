@@ -35,14 +35,15 @@ module MTDesign
             'kind' => e.is_a?(Sketchup::Group) ? 'Group' : 'Component',
             'tag' => e.layer ? e.layer.name : '',
             'size' => size_mm(e),
-            'hidden' => e.hidden?
+            'hidden' => e.hidden?,
+            'root' => !nested?(e)
           }
         end
 
         # Chỉ các Group/Component đang được chọn (bỏ qua cạnh, mặt, chữ...). Mỗi đối tượng chọn = 1 model.
         def models(model)
           seen = {}
-          model.selection.to_a.select { |e| model_like?(e) }.each_with_object([]) do |e, list|
+          model.selection.to_a.select { |e| model_like?(e) && valid?(e) }.each_with_object([]) do |e, list|
             next if seen[e.persistent_id]
 
             seen[e.persistent_id] = true
@@ -56,7 +57,33 @@ module MTDesign
 
         def find(model, pid)
           e = model.find_entity_by_persistent_id(pid.to_i)
-          e if e && !e.deleted? && model_like?(e)
+          e if e && valid?(e) && model_like?(e)
+        end
+
+        def valid?(e)
+          e.respond_to?(:valid?) ? e.valid? && !e.deleted? : !e.deleted?
+        end
+
+        # Đối tượng đang nằm bên trong một Group/Component khác (không ở gốc model)?
+        def nested?(e)
+          e.parent.is_a?(Sketchup::ComponentDefinition)
+        end
+
+        # Trạng thái một trang so với model hiện tại:
+        #  'ok'      – đối tượng còn, đúng vị trí như lúc tạo trang
+        #  'deleted' – đối tượng đã bị xoá
+        #  'nested'  – lúc tạo đang ở gốc model, nay đã bị gộp vào trong Group/Component khác
+        #              (trang của bộ phận con, sinh ra từ bản 2.0.0 quét cả file) → không còn là model riêng
+        def page_status(model, page)
+          e = find(model, page['pid'])
+          return 'deleted' unless e
+          return 'nested' if page['root'] != false && nested?(e)
+
+          'ok'
+        end
+
+        def statuses(model, project)
+          project['pages'].each_with_object({}) { |pg, h| h[pg['id']] = page_status(model, pg) }
         end
       end
     end

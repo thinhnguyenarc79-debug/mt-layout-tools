@@ -13,7 +13,7 @@ Plugin SketchUp (2021–2026, Windows) tự động triển khai bản vẽ nộ
    - **2. Danh sách model:** CHỈ các Group/Component bạn đang chọn trong SketchUp (chọn trước khi mở, hoặc chọn rồi bấm **⤓ Lấy đối tượng đang chọn**). Group/Component con bên trong được phân tích như bộ phận của Group cha, không tách thành model riêng. Mỗi dòng: tick, tên, Rộng × Cao × Sâu (mm), nút 👁 chọn/phóng tới đối tượng. Tick model → **▶ Tự động triển khai** (mỗi model 1 tờ). Không chọn gì → plugin báo, không tự lấy model khác.
    - **3. Tag SketchUp:** bỏ tick Tag để loại khỏi bản vẽ (không đổi model); chọn **Tag cánh** cho "Mặt đứng tháo cánh".
    - **4. Dàn trang tự động:** hình chiếu mặc định, tỉ lệ, hướng mặt trước, gộp khoảng nhỏ, làm tròn DIM, tô màu.
-   - **5. Trang giấy:** chọn/sắp xếp/xoá/đổi tên (bấm đúp).
+   - **5. Trang giấy:** chọn/sắp xếp/xoá/đổi tên (bấm đúp). Trang cũ của bộ phận con (đã bị gộp vào Group cha) hoặc của đối tượng đã xoá được đánh dấu ⚠; nút **🧹 Dọn trang lỗi** xoá chúng sau khi bạn xác nhận. Triển khai lại cùng model không tạo trùng (tuỳ chọn *Thay thế trang cũ*).
    - **6. Khung tên.**
 3. Giữa: tờ giấy vector. Lăn chuột = zoom, chuột giữa / phím Space / công cụ ✋ = kéo màn hình, **bấm + kéo hình chiếu** để dời (phím mũi tên dời 1 mm, Shift = 10 mm), `F` vừa khung, `Ctrl+Z / Ctrl+Y`.
 4. Phải: thuộc tính trang (tên, ký hiệu, tỉ lệ, hướng mặt trước, hình chiếu, DIM) và hình chiếu đang chọn.

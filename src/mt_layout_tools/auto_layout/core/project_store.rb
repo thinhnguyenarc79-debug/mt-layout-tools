@@ -9,7 +9,7 @@ module MTDesign
         module_function
 
         DICT = 'MTDesign_AutoLayout'.freeze
-        VERSION = 1
+        VERSION = 2
         VIEW_KEYS = %w[front open left right back top bottom iso].freeze
         TB_FIELDS = %w[client project location company company_info lead designer checker drafter date].freeze
         MAX_BYTES = 20 * 1024 * 1024
@@ -46,7 +46,12 @@ module MTDesign
           p['exclude_tags'] = Array(raw['exclude_tags']).map { |t| str(t) }.uniq.first(500)
           p['door_tag'] = str(raw['door_tag'])
           p['defaults'] = clean_settings(raw['defaults'] || {})
-          p['pages'] = Array(raw['pages']).first(1000).map { |pg| clean_page(pg) }
+          seen = {}
+          p['pages'] = Array(raw['pages']).first(1000).map { |pg| clean_page(pg) }.reject do |pg|
+            dup = pg['pid'].positive? && seen[pg['pid']]
+            seen[pg['pid']] = true
+            dup
+          end
           p
         end
 
@@ -73,6 +78,7 @@ module MTDesign
             'pid' => pg['pid'].to_i,
             'name' => str(pg['name']),
             'sheet_no' => str(pg['sheet_no'], 40),
+            'root' => pg['root'] != false, # trang cũ (v1) mặc định coi như tạo từ đối tượng ở gốc model
             'offsets' => offs.each_with_object({}) do |(k, v), h|
               next unless VIEW_KEYS.include?(k.to_s) && v.is_a?(Array) && v.length == 2
 
@@ -81,20 +87,42 @@ module MTDesign
           )
         end
 
-        # Tạo 1 trang cho mỗi pid được tick. finder: lambda(pid) -> [tên] hoặc nil nếu không còn đối tượng.
-        # Chỉ tạo đúng các pid truyền vào, không thêm model nào khác.
-        def add_pages(project, pids, finder)
-          created = []
+        # Tạo/thay thế trang cho đúng các pid được tick (không thêm model nào khác).
+        # finder: lambda(pid) -> { 'name' =>, 'root' => } hoặc nil nếu đối tượng không còn.
+        # replace: true  -> model đã có trang thì dựng lại trang đó (giữ id, ký hiệu; đặt lại thiết lập & bố cục).
+        #          false -> model đã có trang thì bỏ qua. Không bao giờ tạo trang trùng cho cùng 1 model.
+        def add_pages(project, pids, finder, replace = true)
+          res = { 'created' => [], 'replaced' => [], 'skipped' => [] }
           pids.map(&:to_i).uniq.each do |pid|
-            name = finder.call(pid)
-            next unless name
+            found = finder.call(pid)
+            next unless found
 
-            no = format('A-%02d', project['pages'].length + 1)
-            page = clean_page(project['defaults'].merge('pid' => pid, 'name' => name, 'sheet_no' => no, 'offsets' => {}))
-            project['pages'] << page
-            created << page['id']
+            found = { 'name' => found.to_s, 'root' => true } unless found.is_a?(Hash)
+            old = project['pages'].find { |pg| pg['pid'] == pid }
+            if old && !replace
+              res['skipped'] << old['id']
+              next
+            end
+            base = project['defaults'].merge('pid' => pid, 'name' => found['name'], 'root' => found['root'] != false,
+                                             'offsets' => {})
+            if old
+              fresh = clean_page(base.merge('id' => old['id'], 'sheet_no' => old['sheet_no']))
+              project['pages'][project['pages'].index(old)] = fresh
+              res['replaced'] << fresh['id']
+            else
+              page = clean_page(base.merge('sheet_no' => next_sheet_no(project)))
+              project['pages'] << page
+              res['created'] << page['id']
+            end
           end
-          created
+          res
+        end
+
+        def next_sheet_no(project)
+          used = project['pages'].map { |pg| pg['sheet_no'] }
+          n = project['pages'].length + 1
+          n += 1 while used.include?(format('A-%02d', n))
+          format('A-%02d', n)
         end
 
         def load(model)

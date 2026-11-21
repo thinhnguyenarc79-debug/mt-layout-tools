@@ -72,22 +72,27 @@ module MTDesign
         end
 
         # ---------------- callbacks ----------------
-        def selection_payload
+        # Danh sách model = selection hiện tại (thay thế danh sách cũ). Kèm trạng thái các trang của dự án.
+        def selection_payload(project = nil)
           models = ModelScanner.models(model)
-          { 'models' => models, 'tags' => ModelScanner.tags(model),
-            'notice' => models.empty? ? ModelScanner::NO_SELECTION : nil }
+          out = { 'models' => models, 'tags' => ModelScanner.tags(model),
+                  'notice' => models.empty? ? ModelScanner::NO_SELECTION : nil }
+          out['status'] = ModelScanner.statuses(model, project) if project
+          out
         end
 
         def on_ready(d, _arg)
-          sel = selection_payload
-          push(d, 'init', { 'project' => ProjectStore.load(model), 'models' => sel['models'], 'notice' => sel['notice'],
+          project = ProjectStore.load(model)
+          sel = selection_payload(project)
+          push(d, 'init', { 'project' => project, 'models' => sel['models'], 'notice' => sel['notice'], 'status' => sel['status'],
                             'tags' => sel['tags'], 'views' => Geometry::VIEWS.transform_values(&:first),
                             'papers' => Sheet::PAPERS.keys, 'scales' => Sheet::SCALES })
         end
 
         # "Lấy đối tượng đang chọn" / "Quét lại": chỉ đọc selection hiện tại, không quét cả file.
-        def on_scan(d, _arg)
-          push(d, 'models', selection_payload)
+        def on_scan(d, arg)
+          raw = arg.to_s.empty? || arg.to_s == 'null' ? nil : parse(arg)
+          push(d, 'models', selection_payload(raw ? ProjectStore.clean(raw) : nil))
         end
 
         # Tạo trang cho các model được chọn. arg: { project, pids }.
@@ -97,14 +102,23 @@ module MTDesign
           pids = Array(data['pids']).map(&:to_i).uniq
           raise ArgumentError, 'Chưa chọn model nào để triển khai.' if pids.empty?
 
-          created = ProjectStore.add_pages(project, pids, lambda do |pid|
+          res = ProjectStore.add_pages(project, pids, lambda do |pid|
             e = ModelScanner.find(model, pid)
-            e && Geometry.instance_name(e)
-          end)
-          raise ArgumentError, 'Không tìm thấy model đã chọn (có thể đã bị xoá).' if created.empty?
+            e && { 'name' => Geometry.instance_name(e), 'root' => !ModelScanner.nested?(e) }
+          end, data['replace'] != false)
+          done = res['created'] + res['replaced']
+          if done.empty?
+            raise ArgumentError, 'Không tìm thấy model đã tick (có thể đã bị xoá).' if res['skipped'].empty?
 
-          push(d, 'project', { 'project' => project, 'open' => created.first,
-                               'message' => "Đã tạo #{created.length} trang." })
+            msg = "#{res['skipped'].length} model đã có trang, không tạo trùng (bật \"Thay thế trang cũ\" để dựng lại)."
+          else
+            msg = "Tạo #{res['created'].length} trang, thay thế #{res['replaced'].length} trang."
+            msg += " Bỏ qua #{res['skipped'].length} model đã có trang." unless res['skipped'].empty?
+          end
+          bad = ModelScanner.statuses(model, project).count { |_, st| st != 'ok' }
+          msg += " Có #{bad} trang cũ không hợp lệ (bộ phận con/đã xoá) – bấm \"🧹 Dọn trang lỗi\"." if bad.positive?
+          push(d, 'project', { 'project' => project, 'open' => (done.first || res['skipped'].first),
+                               'status' => ModelScanner.statuses(model, project), 'message' => msg })
         end
 
         # Dựng 1 trang để xem/biên tập. arg: { project, page_id }.
@@ -178,7 +192,9 @@ module MTDesign
           path = UI.openpanel('Mở dự án AUTO LAYOUT', folder, 'Dự án JSON|*.json||')
           return unless path
 
-          push(d, 'project', { 'project' => ProjectStore.read_file(path), 'message' => "Đã mở #{File.basename(path)}" })
+          project = ProjectStore.read_file(path)
+          push(d, 'project', { 'project' => project, 'status' => ModelScanner.statuses(model, project),
+                               'message' => "Đã mở #{File.basename(path)}" })
         end
 
         # Chọn đối tượng trong SketchUp (không sửa model) để người dùng thấy đang triển khai cái gì.
@@ -208,6 +224,10 @@ module MTDesign
           cv = Canvas.new(fmt, pw, ph)
           tb = project['tb'].merge('sheet_name' => pg['name'], 'sheet_no' => pg['sheet_no'])
           begin
+            if ModelScanner.page_status(model, pg) == 'nested'
+              raise ArgumentError, "Trang #{pg['sheet_no']} là bộ phận nằm bên trong một Group khác (trang cũ từ bản 2.0.0). " \
+                                   'Bấm "🧹 Dọn trang lỗi" để xoá, rồi triển khai Group cha.'
+            end
             cap = capture_for(pg, project)
             views = pg['views'].map do |k|
               if k == 'open'

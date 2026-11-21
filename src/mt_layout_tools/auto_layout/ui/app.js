@@ -21,15 +21,16 @@
     on: function (kind, d) {
       if (kind === 'init') {
         S.project = d.project; S.tags = d.tags; S.viewNames = d.views; S.scales = d.scales;
-        setModels(d.models, d.notice);
+        setModels(d.models, d.notice); S.status = d.status || {};
         buildStatic(); renderAll();
         if (d.notice) msg(d.notice, 'warn');
         if (S.project.pages.length) openPage(S.project.pages[0].id);
       } else if (kind === 'models') {
-        S.tags = d.tags; setModels(d.models, d.notice); renderModels(); renderTags();
+        S.tags = d.tags; setModels(d.models, d.notice); if (d.status) S.status = d.status;
+        renderModels(); renderTags(); renderPages();
         d.notice ? msg(d.notice, 'warn') : msg('Đã lấy ' + d.models.length + ' đối tượng đang chọn.', 'ok');
       } else if (kind === 'project') {
-        snapshot(); S.project = d.project; markDirty(); renderAll();
+        snapshot(); S.project = d.project; if (d.status) S.status = d.status; markDirty(); renderAll();
         openPage(d.open || (S.project.pages[0] && S.project.pages[0].id));
         if (d.message) msg(d.message, 'ok');
       } else if (kind === 'page') {
@@ -128,11 +129,18 @@
     $('pgList').innerHTML = ps.length ? ps.map(function (p) {
       return '<div class="it' + (p.id === S.cur ? ' cur' : '') + '" data-id="' + p.id + '">' +
         '<span class="no">' + esc(p.sheet_no) + '</span><span class="nm">' + esc(p.name) + '</span>' +
-        '<span class="sz">' + p.views.length + ' hình</span></div>';
+        '<span class="sz">' + p.views.length + ' hình' + badge(p) + '</span></div>';
     }).join('') : '<div class="empty">Chưa có trang.</div>';
+    var bad = badPages().length;
+    $('pgClean').style.display = bad ? 'block' : 'none';
+    $('pgClean').textContent = '🧹 Dọn ' + bad + ' trang lỗi (bộ phận con / đã xoá)';
     $('empty').style.display = ps.length ? 'none' : 'flex';
     $('paper').style.display = ps.length ? 'block' : 'none';
   }
+
+  var STATUS = { nested: '⚠ bộ phận con', deleted: '⚠ đã xoá' };
+  function badge(p) { var st = (S.status || {})[p.id]; return STATUS[st] ? ' · <b style="color:#b3261e">' + STATUS[st] + '</b>' : ''; }
+  function badPages() { return S.project.pages.filter(function (p) { return STATUS[(S.status || {})[p.id]]; }); }
 
   function renderPageProps() {
     var p = page(), box = $('propPage');
@@ -341,15 +349,16 @@
     if (e.target.classList.contains('pick')) { call('pick', String(pid)); return; }
     S.picked[pid] = !S.picked[pid]; renderModels();
   };
-  $('scan').onclick = function () { call('scan', null); };
-  $('getSel').onclick = function () { call('scan', null); };
+  // Đọc lại selection: thay thế danh sách model, không tạo trang.
+  $('scan').onclick = function () { call('scan', S.project); };
+  $('getSel').onclick = function () { call('scan', S.project); };
   $('mAll').onclick = function () { S.models.forEach(function (m) { S.picked[m.pid] = true; }); renderModels(); };
   $('mNone').onclick = function () { S.picked = {}; renderModels(); };
   $('generate').onclick = function () {
     var pids = S.models.filter(function (m) { return S.picked[m.pid]; }).map(function (m) { return m.pid; });
     if (!S.models.length) { msg(S.notice || 'Bạn chưa chọn Group hoặc Component trong SketchUp. Hãy chọn đối tượng cần triển khai trước.', 'err'); return; }
     if (!pids.length) { msg('Tick ít nhất 1 model ở danh sách.', 'err'); return; }
-    call('generate', { project: S.project, pids: pids });
+    call('generate', { project: S.project, pids: pids, replace: $('replace').checked });
   };
 
   // Tag
@@ -393,6 +402,19 @@
     if (!window.confirm('Xoá trang ' + p.sheet_no + ' – ' + p.name + '? (Hoàn tác được bằng Ctrl+Z)')) return;
     snapshot(); var ps = S.project.pages, i = ps.indexOf(p); ps.splice(i, 1); changed(false);
     openPage(ps[Math.min(i, ps.length - 1)] ? ps[Math.min(i, ps.length - 1)].id : null);
+  };
+
+  $('pgClean').onclick = function () {
+    var bad = badPages(); if (!bad.length) return;
+    var list = bad.map(function (p) { return p.sheet_no + ' – ' + p.name + ' (' + STATUS[S.status[p.id]].replace('⚠ ', '') + ')'; });
+    if (!window.confirm('Xoá ' + bad.length + ' trang không còn là model riêng?\n\n' + list.slice(0, 25).join('\n') +
+      (list.length > 25 ? '\n…' : '') + '\n\nCác trang khác giữ nguyên. Hoàn tác được bằng Ctrl+Z; nhớ bấm 💾 Lưu.')) return;
+    snapshot();
+    var ids = bad.map(function (p) { return p.id; });
+    S.project.pages = S.project.pages.filter(function (p) { return ids.indexOf(p.id) < 0; });
+    changed(false);
+    openPage(S.project.pages[0] ? S.project.pages[0].id : null);
+    msg('Đã dọn ' + ids.length + ' trang lỗi. Bấm 💾 Lưu để ghi vào file SketchUp.', 'ok');
   };
 
   // Thuộc tính trang

@@ -1,7 +1,7 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.2",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "4d10829ecaf34748cf7b2dd9058863b67a1a2dea29a16b8f03dcb253261b1855",
-  "notes": "Danh sách model chỉ lấy Group/Component đang chọn trong SketchUp (không quét cả file, không tách Group con). Thêm nút Lấy đối tượng đang chọn, nút 👁, kích thước Rộng×Cao×Sâu đúng trục, thông báo khi chưa chọn."
+  "sha256": "b2e5520502ecbfe6324ce4e2006686d0105d5fd773d06641e78b1d832b7b8b4b",
+  "notes": "Sửa lỗi Group cha/con: 1 Group cha = 1 model = 1 trang. Đánh dấu và dọn trang cũ của bộ phận con/đối tượng đã xoá (từ bản 2.0.0), không tạo trùng trang khi triển khai nhiều lần, có chế độ thay thế trang cũ."
 }

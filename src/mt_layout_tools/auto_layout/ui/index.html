@@ -51,6 +51,7 @@
           <button id="scan" title="Quét lại (chỉ đọc đối tượng đang chọn, không quét cả file)">⟳ Quét lại</button>
           <button id="mAll">Tick hết</button><button id="mNone">Bỏ tick</button>
         </div>
+        <div class="checks"><label title="Model đã có trang: dựng lại trang đó thay vì bỏ qua. Không bao giờ tạo trang trùng."><input id="replace" type="checkbox" checked> Thay thế trang cũ của model</label></div>
         <button id="generate" class="gold wide">▶ Tự động triển khai</button>
         <p class="hint">Chỉ hiện các Group/Component bạn đang chọn trong SketchUp (Group con bên trong được tính là bộ phận của Group cha). Tick model cần triển khai rồi bấm ▶ — mỗi model 1 tờ. Kích thước: Rộng × Cao × Sâu (mm).</p>
       </div>
@@ -84,6 +85,7 @@
       <div class="body">
         <div id="pgList" class="list pages"></div>
         <div class="btns"><button id="pgUp">▲</button><button id="pgDown">▼</button><button id="pgDel" class="danger">✕ Xoá trang</button></div>
+        <button id="pgClean" class="wide" style="display:none">🧹 Dọn trang lỗi</button>
         <p class="hint">Bấm đúp vào tên trang để đổi tên.</p>
       </div>
     </section>
