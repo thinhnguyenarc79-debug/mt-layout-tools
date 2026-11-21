@@ -1,6 +1,6 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
-  "sha256": "06639991438f9f2fb71dabc8987f260b6c15c8eca9946b6c4a5495be62d2b332",
-  "notes": "Thêm biểu tượng MT Layout Tools trên thanh công cụ; bấm vào mở bảng có nút Cập nhật."
+  "sha256": "db59149215da90b87f44b7e2a3bc5e5ab7336d14c8be79345e9bb0d8d8997060",
+  "notes": "Biểu tượng thanh công cụ có chữ MT."
 }
