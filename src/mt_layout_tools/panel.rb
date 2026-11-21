@@ -46,7 +46,7 @@ module MTDesign
             set_status('Đang kiểm tra cập nhật...')
             Updater.check(silent: false)
           end
-          d.add_action_callback('detail') { |_ctx| Detail.show }
+          d.add_action_callback('detail') { |_ctx| AutoLayout.show }
           d.add_action_callback('about') { |_ctx| LayoutTools.show_about }
           d
         end

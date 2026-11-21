@@ -1,7 +1,7 @@
 {
-  "version": "1.3.0",
+  "version": "2.0.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "7177e16fdb10127b96a7132a11468b396c27c87bf58b72152ec69e9f5298fa34",
-  "notes": "Bảng Triển khai chi tiết có xem trước tờ A3 ở giữa (cập nhật ngay khi đổi lựa chọn). Tự xếp hình nhiều hàng, Trục đo thành cột riêng, tự chọn tỉ lệ vừa khổ; hình không còn tràn ra khung tên."
+  "sha256": "47f1ed36cbd91c0fbb3d1743ef9c6f5d46315bc62a4eea8ce838d8a99d4427d7",
+  "notes": "AUTO LAYOUT PRO – Giai đoạn 1: trình biên tập dàn trang (danh sách model, Tag, nhiều trang, kéo hình chiếu, lưu dự án), xuất PDF nhiều trang và SVG. Giữ nguyên biểu tượng MT và nút Cập nhật."
 }

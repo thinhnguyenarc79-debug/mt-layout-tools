@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>AUTO LAYOUT PRO</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="top">
+  <div class="brand">AUTO LAYOUT <b>PRO</b></div>
+  <div class="tools">
+    <span class="grp" title="Công cụ">
+      <button data-tool="select" class="tool on" title="Chọn / kéo hình chiếu (V)">⬚ Chọn</button>
+      <button data-tool="pan" class="tool" title="Kéo màn hình (H) – hoặc giữ chuột giữa">✋ Kéo</button>
+    </span>
+    <span class="grp">
+      <button id="zout" title="Thu nhỏ">−</button><button id="zfit" title="Vừa khung (F)">Vừa khung</button><button id="zin" title="Phóng to">+</button>
+    </span>
+    <span class="grp">
+      <button id="undo" title="Hoàn tác (Ctrl+Z)">↶</button><button id="redo" title="Làm lại (Ctrl+Y)">↷</button>
+    </span>
+    <span class="grp">
+      <button id="refresh" title="Đọc lại hình học từ SketchUp và vẽ lại trang">⟳ Cập nhật bản vẽ</button>
+    </span>
+    <span class="grp">
+      <button id="save" class="gold" title="Lưu dự án vào file SketchUp">💾 Lưu</button>
+      <button id="pdfPage" title="Xuất trang đang mở ra PDF">PDF trang</button>
+      <button id="pdfAll" title="Xuất tất cả trang thành 1 PDF nhiều trang">PDF tất cả</button>
+      <button id="svgPage" title="Xuất trang đang mở ra SVG">SVG</button>
+    </span>
+  </div>
+</div>
+
+<div id="wrap">
+  <aside id="left">
+    <section data-sec="project" class="open">
+      <h3>1. Dự án</h3>
+      <div class="body">
+        <label>Tên dự án</label><input id="pName" type="text">
+        <label>Khổ giấy</label><select id="pPaper"></select>
+        <div class="btns"><button id="openJson">Mở .json</button><button id="saveJson">Lưu .json</button></div>
+      </div>
+    </section>
+    <section data-sec="models" class="open">
+      <h3>2. Danh sách model <span class="badge" id="mCount">0</span></h3>
+      <div class="body">
+        <input id="mSearch" type="text" placeholder="Tìm theo tên...">
+        <div id="mList" class="list"></div>
+        <div class="btns">
+          <button id="scan" title="Quét lại model và Tag trong SketchUp">⟳ Quét lại</button>
+          <button id="mAll">Chọn hết</button><button id="mNone">Bỏ chọn</button>
+        </div>
+        <button id="generate" class="gold wide">▶ Tự động triển khai</button>
+        <p class="hint">Tick các model rồi bấm Tự động triển khai: mỗi model tạo 1 tờ theo mục 4. Đối tượng đang chọn trong SketchUp được tick sẵn.</p>
+      </div>
+    </section>
+    <section data-sec="tags">
+      <h3>3. Tag SketchUp <span class="badge" id="tCount">0</span></h3>
+      <div class="body">
+        <p class="hint">Bỏ tick Tag để loại khỏi bản vẽ (không đổi model).</p>
+        <div id="tList" class="list"></div>
+        <label>Tag cánh (ẩn ở "Mặt đứng tháo cánh")</label><select id="doorTag"></select>
+      </div>
+    </section>
+    <section data-sec="auto">
+      <h3>4. Dàn trang tự động</h3>
+      <div class="body">
+        <p class="hint">Mặc định cho trang mới tạo.</p>
+        <div id="dViews" class="checks"></div>
+        <div class="row">
+          <div><label>Tỉ lệ</label><select id="dScale"></select></div>
+          <div><label>Hướng mặt trước</label><select id="dFront"></select></div>
+        </div>
+        <div class="row">
+          <div><label>Bỏ khoảng &lt; (mm)</label><input id="dGap" type="number" min="0" step="1"></div>
+          <div><label>Làm tròn DIM (mm)</label><input id="dRound" type="number" min="0.1" step="0.5"></div>
+        </div>
+        <div class="checks"><label><input id="dFill" type="checkbox"> Tô màu vật liệu</label><label><input id="dDims" type="checkbox"> Ghi kích thước</label></div>
+      </div>
+    </section>
+    <section data-sec="pages" class="open">
+      <h3>5. Trang giấy <span class="badge" id="pgCount">0</span></h3>
+      <div class="body">
+        <div id="pgList" class="list pages"></div>
+        <div class="btns"><button id="pgUp">▲</button><button id="pgDown">▼</button><button id="pgDel" class="danger">✕ Xoá trang</button></div>
+        <p class="hint">Bấm đúp vào tên trang để đổi tên.</p>
+      </div>
+    </section>
+    <section data-sec="tb">
+      <h3>6. Khung tên</h3>
+      <div class="body" id="tbForm">
+        <label>Chủ đầu tư</label><input data-tb="client" type="text">
+        <label>Công trình</label><input data-tb="project" type="text">
+        <label>Địa điểm</label><input data-tb="location" type="text">
+        <label>Đơn vị thiết kế</label><input data-tb="company" type="text">
+        <label>Dòng phụ (địa chỉ, SĐT)</label><input data-tb="company_info" type="text">
+        <div class="row"><div><label>Chủ trì</label><input data-tb="lead" type="text"></div><div><label>Thiết kế</label><input data-tb="designer" type="text"></div></div>
+        <div class="row"><div><label>Kiểm duyệt</label><input data-tb="checker" type="text"></div><div><label>Thể hiện</label><input data-tb="drafter" type="text"></div></div>
+        <label>Ngày</label><input data-tb="date" type="text">
+      </div>
+    </section>
+  </aside>
+
+  <main id="center">
+    <div id="stage">
+      <div id="paper"></div>
+      <div id="empty">Chưa có trang nào.<br>Tick model ở mục <b>2. Danh sách model</b> rồi bấm <b>▶ Tự động triển khai</b>.</div>
+    </div>
+    <div id="status"><span id="stMsg"></span><span id="stInfo"></span></div>
+    <div id="busy">Đang dựng bản vẽ…</div>
+  </main>
+
+  <aside id="right">
+    <h3>Thuộc tính trang</h3>
+    <div id="propPage" class="body">
+      <label>Tên bản vẽ</label><input id="pgName" type="text">
+      <div class="row"><div><label>Ký hiệu</label><input id="pgNo" type="text"></div><div><label>Tỉ lệ</label><select id="pgScale"></select></div></div>
+      <label>Hướng mặt trước</label><select id="pgFront"></select>
+      <label>Hình chiếu trên trang</label><div id="pgViews" class="checks"></div>
+      <div class="row">
+        <div><label>Bỏ khoảng &lt; (mm)</label><input id="pgGap" type="number" min="0" step="1"></div>
+        <div><label>Làm tròn DIM</label><input id="pgRound" type="number" min="0.1" step="0.5"></div>
+      </div>
+      <div class="checks"><label><input id="pgFill" type="checkbox"> Tô màu</label><label><input id="pgDims" type="checkbox"> Kích thước</label></div>
+      <div class="btns"><button id="pgPick" title="Chọn đối tượng gốc trong SketchUp">Chọn trong SketchUp</button><button id="pgReset">Đặt lại bố cục</button></div>
+    </div>
+    <h3>Hình chiếu đang chọn</h3>
+    <div id="propView" class="body"><p class="hint">Bấm vào một hình chiếu trên giấy để chọn; kéo để di chuyển.</p></div>
+  </aside>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 # encoding: UTF-8
 module MTDesign
   module LayoutTools
+    module AutoLayout
     # Lấy hình học của Group/Component đang chọn và dựng hình chiếu có khử nét khuất.
     # Toạ độ hình chiếu: [u, v, sâu] đơn vị mm; u sang phải, v hướng XUỐNG, sâu càng lớn càng gần người nhìn.
     module Geometry
@@ -19,6 +20,7 @@ module MTDesign
         'right' => ['MẶT BÊN PHẢI',  ->(p) { [p[1], -p[2], p[0]] }],
         'back'  => ['MẶT SAU',       ->(p) { [-p[0], -p[2], p[1]] }],
         'top'   => ['MẶT BẰNG',      ->(p) { [p[0], -p[1], p[2]] }],
+        'bottom' => ['MẶT ĐÁY',      ->(p) { [p[0], p[1], -p[2]] }],
         'open'  => ['MẶT ĐỨNG THÁO CÁNH', ->(p) { [p[0], -p[2], -p[1]] }],
         'iso'   => ['TRỤC ĐO', lambda do |p|
           r = [0.7071067811865476, -0.7071067811865476, 0.0]
@@ -32,15 +34,30 @@ module MTDesign
 
       Capture = Struct.new(:name, :edges, :triangles, :materials)
 
-      # exclude: danh sách tên Tag bỏ qua (vd. tag cánh cho hình tháo cánh).
-      def capture(model, exclude = [])
-        sel = model.selection.to_a
-        unless sel.length == 1 && (sel.first.is_a?(Sketchup::Group) || sel.first.is_a?(Sketchup::ComponentInstance))
-          raise ArgumentError, 'Chọn đúng 1 Group hoặc Component (ví dụ 1 tủ) rồi bấm lại.'
-        end
+      # Hướng mặt trước của đồ vật (người xem đứng ở phía nào theo trục cục bộ của Group/Component).
+      # Xoay quanh Z để mặt trước luôn quay về -Y trước khi chiếu.
+      FRONTS = {
+        '-Y' => ->(x, y) { [x, y] },
+        '+Y' => ->(x, y) { [-x, -y] },
+        '-X' => ->(x, y) { [-y, x] },
+        '+X' => ->(x, y) { [y, -x] }
+      }.freeze
 
-        inst = sel.first
-        world = model.edit_transform * inst.transformation
+      # Ma trận đặt đối tượng trong toạ độ thế giới (tính cả khi đang mở edit một Group cha).
+      def world_transform(model, inst)
+        active_parent = model.active_entities.parent
+        base = inst.parent == active_parent ? model.edit_transform : Geom::Transformation.new
+        base * inst.transformation
+      end
+
+      # inst: Group/ComponentInstance. exclude: tên Tag bỏ qua. front: khoá trong FRONTS.
+      def capture(model, inst, exclude = [], front = '-Y')
+        unless inst.is_a?(Sketchup::Group) || inst.is_a?(Sketchup::ComponentInstance)
+          raise ArgumentError, 'Đối tượng phải là Group hoặc Component.'
+        end
+        raise ArgumentError, 'Đối tượng đã bị xoá khỏi model.' if inst.deleted?
+
+        world = world_transform(model, inst)
         origin = world.origin
         xa = world.xaxis.normalize
         ya = world.yaxis.normalize
@@ -48,13 +65,19 @@ module MTDesign
         za.reverse! if za.dot(world.zaxis) < 0
         ya = za.cross(xa).normalize
         axes = [xa, ya, za]
-        conv = ->(pt, t) { d = pt.transform(t) - origin; axes.map { |a| d.dot(a).to_f * MM } }
+        rot = FRONTS.fetch(front.to_s, FRONTS['-Y'])
+        conv = lambda do |pt, t|
+          d = pt.transform(t) - origin
+          x, y, z = axes.map { |a| d.dot(a).to_f * MM }
+          rx, ry = rot.call(x, y)
+          [rx, ry, z]
+        end
 
         cap = Capture.new(instance_name(inst), [], [], {})
         @exclude = exclude.map(&:to_s)
         ents = inst.is_a?(Sketchup::Group) ? inst.entities : inst.definition.entities
         collect(ents, world, conv, cap, inst.material, 0)
-        raise ArgumentError, 'Đối tượng được chọn không có cạnh hiển thị.' if cap.edges.empty?
+        raise ArgumentError, 'Đối tượng không có cạnh hiển thị (kiểm tra Tag đang lọc).' if cap.edges.empty?
 
         cap
       end
@@ -205,7 +228,7 @@ module MTDesign
           color = shaded(color, raw) if shade
           [p.map { |pt| [pt[0] - l, pt[1] - t] }, color]
         end
-        { name: title, lines: lines, fills: fills, w: r - l, h: b - t, dims: key != 'iso' }
+        { key: key, name: title, lines: lines, fills: fills, w: r - l, h: b - t, dims: key != 'iso' }
       end
 
       # Chia nhỏ tam giác lớn để tô màu đúng thứ tự trước/sau (thuật toán hoạ sĩ).
@@ -235,5 +258,6 @@ module MTDesign
         format('#%02X%02X%02X', *rgb)
       end
     end
+  end
   end
 end

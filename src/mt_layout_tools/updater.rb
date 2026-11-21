@@ -122,6 +122,7 @@ module MTDesign
           end
           File.delete(path) rescue nil
 
+          LayoutTools.remove_obsolete if LayoutTools.respond_to?(:remove_obsolete)
           reload_code
           panel_refresh
           UI.messagebox("Đã cập nhật lên #{info['version']}.\n" \
@@ -135,7 +136,10 @@ module MTDesign
         def reload_code
           dir = File.dirname(__FILE__)
           LayoutTools.send(:remove_const, :VERSION) if LayoutTools.const_defined?(:VERSION, false)
+          skip = defined?(LayoutTools::OBSOLETE_DIRS) ? LayoutTools::OBSOLETE_DIRS : []
           Dir.glob(File.join(dir, '**', '*.rb')).sort.each do |f|
+            next if skip.any? { |d| f.start_with?(File.join(dir, d) + '/') }
+
             begin
               load f
             rescue StandardError, ScriptError => e

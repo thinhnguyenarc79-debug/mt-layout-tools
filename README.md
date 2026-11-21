@@ -1,34 +1,75 @@
-# MT Layout Tools
+# MT Layout Tools – AUTO LAYOUT PRO
 
-Plugin SketchUp 2022 (Windows) dàn trang bản vẽ nội thất cho MT Design.
+Plugin SketchUp (2021–2026, Windows) tự động triển khai bản vẽ nội thất cho MT Design: chọn model → tự dựng hình chiếu có khử nét khuất, ghi kích thước đo từ hình học thật, dàn lên khổ giấy có khung tên, xuất PDF/SVG.
 
-## Cài lần đầu
-1. Tải `dist/mt_layout_tools.rbz`.
-2. SketchUp → **Extensions → Extension Manager → Install Extension** → chọn file `.rbz`.
+![Giao diện](docs/giao-dien-v2.png)
 
-## Cập nhật
-Menu **Extensions → MT Layout Tools → Cập nhật** (hoặc nút trên thanh công cụ MT Layout Tools).
-Plugin đọc `version.json` ở nhánh `main`, nếu có bản mới thì tải `dist/mt_layout_tools.rbz`, kiểm SHA-256 và cài đè.
-Khi mở SketchUp, plugin cũng tự kiểm tra tối đa 1 lần/ngày.
+## 1. Cài đặt
+- **Lần đầu:** tải `dist/mt_layout_tools.rbz` → SketchUp → **Extensions → Extension Manager → Install Extension** → chọn file → khởi động lại SketchUp.
+- **Cập nhật:** bấm biểu tượng **MT** trên thanh công cụ → **Cập nhật** (đọc `version.json` qua GitHub API, kiểm SHA-256, cài đè, không phải cài lại).
 
-## Triển khai chi tiết A3 (v1.2)
-Chọn 1 tủ/Group → bảng MT → **Triển khai chi tiết A3** → điền khung tên → **Xuất PDF A3**.
-- Hình chiếu: Mặt đứng, Mặt đứng tháo cánh (ẩn Tag cánh), Bên trái, Bên phải, Mặt sau, Mặt bằng, Trục đo.
-- Kích thước tổng + kích thước chuỗi (tự dò vách/kệ, có độ dày ván), tỉ lệ tự chọn, tô màu vật liệu, bảng MAT-xx, khung tên.
+## 2. Sử dụng (Giai đoạn 1)
+1. Bấm biểu tượng **MT** → **AUTO LAYOUT PRO**.
+2. Cột trái:
+   - **1. Dự án:** tên, khổ giấy (A4–A0), mở/lưu `.json`.
+   - **2. Danh sách model:** các Group/Component cấp ngoài cùng + đối tượng đang chọn (kích thước mm). Tick model → **▶ Tự động triển khai** (mỗi model 1 tờ). Nút ◎ chọn đối tượng trong SketchUp.
+   - **3. Tag SketchUp:** bỏ tick Tag để loại khỏi bản vẽ (không đổi model); chọn **Tag cánh** cho "Mặt đứng tháo cánh".
+   - **4. Dàn trang tự động:** hình chiếu mặc định, tỉ lệ, hướng mặt trước, gộp khoảng nhỏ, làm tròn DIM, tô màu.
+   - **5. Trang giấy:** chọn/sắp xếp/xoá/đổi tên (bấm đúp).
+   - **6. Khung tên.**
+3. Giữa: tờ giấy vector. Lăn chuột = zoom, chuột giữa / phím Space / công cụ ✋ = kéo màn hình, **bấm + kéo hình chiếu** để dời (phím mũi tên dời 1 mm, Shift = 10 mm), `F` vừa khung, `Ctrl+Z / Ctrl+Y`.
+4. Phải: thuộc tính trang (tên, ký hiệu, tỉ lệ, hướng mặt trước, hình chiếu, DIM) và hình chiếu đang chọn.
+5. **⟳ Cập nhật bản vẽ** sau khi sửa model; **💾 Lưu** ghi dự án vào file SKP (Ctrl+S trong SketchUp để lưu file); **PDF trang / PDF tất cả / SVG** để xuất.
 
-## Cấu trúc
+## 3. Cấu trúc
 ```
-src/mt_layout_tools.rb            # loader (đăng ký extension)
-src/mt_layout_tools/version.rb    # số phiên bản
-src/mt_layout_tools/main.rb       # menu, toolbar
-src/mt_layout_tools/updater.rb    # cơ chế cập nhật
-src/mt_layout_tools/detail/       # triển khai chi tiết A3 (geometry, sheet, pdf, ui)
-src/mt_layout_tools/icons/
-dist/mt_layout_tools.rbz          # gói cài đặt (do tools/build_rbz.py tạo)
-version.json                      # phiên bản mới nhất + link .rbz + SHA-256
+src/mt_layout_tools.rb                    loader
+src/mt_layout_tools/main.rb               menu, thanh công cụ, dọn thư mục cũ
+src/mt_layout_tools/panel.rb, ui/         bảng MT (biểu tượng) + nút Cập nhật
+src/mt_layout_tools/updater.rb            cập nhật qua GitHub
+src/mt_layout_tools/auto_layout/
+  auto_layout.rb                          controller HtmlDialog (callbacks, cache, xuất file, log)
+  core/model_scanner.rb                   liệt kê model, Tag, tìm theo persistent_id
+  core/geometry.rb                        hệ toạ độ cục bộ, hướng mặt trước, lọc Tag, phép chiếu, khử nét khuất
+  core/dimension_engine.rb                DIM tổng + DIM chuỗi đo từ hình học
+  core/sheet.rb                           dàn trang, tự chọn tỉ lệ, bảng vật liệu, khung tên
+  core/canvas.rb                          vẽ chung PDF/SVG
+  core/pdf.rb                             ghi PDF vector nhiều trang, font tiếng Việt nhúng
+  core/project_store.rb                   dự án (lưu trong SKP / .json), làm sạch dữ liệu
+  ui/index.html, app.css, app.js          giao diện biên tập
+  fonts/                                  Noto Sans (OFL)
+tests/                                    test chạy ngoài SketchUp
+tools/build_rbz.py                        đóng gói + version.json
 ```
 
-## Phát hành bản mới
-1. Sửa code trong `src/`, tăng `VERSION` trong `version.rb`.
-2. `python3 tools/build_rbz.py "Ghi chú thay đổi"`.
-3. Commit `src/`, `dist/`, `version.json` và push lên `main`.
+## 4. Tính năng
+| Hạng mục | Trạng thái |
+|---|---|
+| RBZ cài được, nút Cập nhật | ✅ |
+| Đọc model thật: Group/Component lồng nhau, transformation tích luỹ, xoay bất kỳ, ẩn/Tag ẩn, đơn vị → mm | ✅ |
+| Danh sách model + Tag, lọc Tag | ✅ |
+| Hướng mặt trước (-Y/+Y/-X/+X) | ✅ |
+| Mặt đứng trước/sau/trái/phải, mặt bằng, mặt đáy, trục đo | ✅ |
+| Khử nét khuất | ✅ (đường khuất bị bỏ, chưa vẽ nét đứt) |
+| DIM tổng + DIM chuỗi theo vách/kệ (đo thật, gộp khoảng nhỏ, làm tròn) | ✅ |
+| Mặt đứng tháo cánh (theo Tag cánh) | ✅ |
+| Tự chọn tỉ lệ, xếp nhiều hàng, kẹp không đè khung tên | ✅ |
+| Editor: zoom/pan, chọn & kéo hình chiếu, undo/redo, nhiều trang | ✅ |
+| Lưu dự án (SKP / JSON), xuất PDF nhiều trang, SVG | ✅ |
+| Mặt cắt A-A có hatch | ⏳ Giai đoạn 2 |
+| Nét đứt cho cạnh khuất, phân cấp nét bao/cấu tạo, đường trục | ⏳ Giai đoạn 2 |
+| Nhận diện bộ phận tủ (cánh, vách, đợt…), gán thủ công | ⏳ Giai đoạn 2 |
+| Công cụ vẽ 2D (line, rect, text, leader, hatch, dim tay), layer | ⏳ Giai đoạn 4 |
+| DXF, PNG; DWG/LayOut (cần kiểm tra API) | ⏳ Giai đoạn 3 |
+| Đồng bộ tự phát hiện thay đổi, hàng loạt có tiến trình/huỷ | ⏳ Giai đoạn 4 |
+
+## 5. Test
+```
+ruby tests/run_all.rb
+```
+Kiểm: kích thước hình chiếu, khử nét khuất (che toàn phần/một phần), xoay mặt trước, DIM khoang không đều, DIM chuỗi, gộp & làm tròn, hình nằm trong vùng vẽ & không chồng nhau, tự đổi tỉ lệ, kẹp khi kéo, SVG hợp lệ, PDF nhiều trang đúng khổ, làm sạch dữ liệu dự án.
+Phần cần kiểm trong SketchUp: đọc model thật (`model_scanner`, `Geometry.capture`), hộp thoại, lưu thuộc tính, hộp lưu file.
+
+## 6. Sửa lỗi & nâng cấp
+- Lỗi khi chạy được ghi vào `%TEMP%\mt_auto_layout.log`; Ruby Console của SketchUp cũng in lỗi.
+- Phát hành bản mới: sửa `src/`, tăng `VERSION` trong `version.rb`, `python3 tools/build_rbz.py "ghi chú"`, chạy test, commit & push `main`.

@@ -4,13 +4,14 @@ require 'zlib'
 
 module MTDesign
   module LayoutTools
-    # Bộ ghi PDF vector (font Noto Sans nhúng, hỗ trợ tiếng Việt).
+    module AutoLayout
+    # Bộ ghi PDF vector nhiều trang (font Noto Sans nhúng, hỗ trợ tiếng Việt).
     module Pdf
       module_function
 
       MM_TO_PT = 72.0 / 25.4
-      FONT_PATH = File.join(__dir__, 'fonts', 'MTNotoSans.ttf')
-      METRICS_PATH = File.join(__dir__, 'fonts', 'metrics.json')
+      FONT_PATH = File.join(__dir__, '..', 'fonts', 'MTNotoSans.ttf')
+      METRICS_PATH = File.join(__dir__, '..', 'fonts', 'metrics.json')
 
       def number(n)
         format('%.5f', n).sub(/\.?0+\z/, '').sub(/\A-0\z/, '0')
@@ -59,6 +60,10 @@ module MTDesign
           @objects = []
         end
 
+        def objects_count
+          @objects.length
+        end
+
         def append(object)
           @objects << object
           @objects.length
@@ -84,6 +89,11 @@ module MTDesign
       end
 
       def pdf_file(content, page)
+        pdf_pages([content], page)
+      end
+
+      # contents: mảng nội dung từng trang (cùng khổ giấy page = [w_pt, h_pt]).
+      def pdf_pages(contents, page)
         info = metrics
         doc = PdfFile.new
         font = File.binread(FONT_PATH)
@@ -101,10 +111,15 @@ module MTDesign
         unicode = doc.stream(cmap(unique))
         resource = doc.append("<< /Type /Font /Subtype /Type0 /BaseFont #{font_name} /Encoding /Identity-H " \
           "/DescendantFonts [#{cid} 0 R] /ToUnicode #{unicode} 0 R >>")
-        drawing = doc.stream(content)
-        page_id = doc.append("<< /Type /Page /Parent #{drawing + 2} 0 R /MediaBox [0 0 #{xy(page)}] /Contents #{drawing} 0 R " \
-          "/Resources << /Font << /F1 #{resource} 0 R >> >> >>")
-        pages = doc.append("<< /Type /Pages /Kids [#{page_id} 0 R] /Count 1 >>")
+        pages_id = doc.objects_count + contents.length * 2 + 1
+        kids = contents.map do |content|
+          drawing = doc.stream(content)
+          doc.append("<< /Type /Page /Parent #{pages_id} 0 R /MediaBox [0 0 #{xy(page)}] /Contents #{drawing} 0 R " \
+            "/Resources << /Font << /F1 #{resource} 0 R >> >> >>")
+        end
+        pages = doc.append("<< /Type /Pages /Kids [#{kids.map { |k| "#{k} 0 R" }.join(' ')}] /Count #{kids.length} >>")
+        raise 'PDF: sai số đối tượng' unless pages == pages_id
+
         doc.append("<< /Type /Catalog /Pages #{pages} 0 R >>")
         doc.render
       end
@@ -121,5 +136,6 @@ module MTDesign
         header << "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n"
       end
     end
+  end
   end
 end
