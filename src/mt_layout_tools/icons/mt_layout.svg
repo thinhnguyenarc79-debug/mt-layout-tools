@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <polygon points="10.5,1 10.5,23 1,23" fill="#4C8C3A" stroke="#2F4A3A" stroke-width="0.8" stroke-linejoin="round"/>
-  <polygon points="13.5,1 13.5,23 23,23" fill="#E3A23B" stroke="#8A5A12" stroke-width="0.8" stroke-linejoin="round"/>
-  <rect x="11.2" y="0.5" width="1.6" height="23" rx="0.6" fill="#1E5BD8"/>
-  <g fill="none" stroke-linejoin="miter" stroke-linecap="square">
-    <path d="M2.6 19.5V11.5L6.2 16.2L9.8 11.5V19.5 M14.2 11.5H21.4 M17.8 11.5V19.5" stroke="#1f2a24" stroke-width="4.2"/>
-    <path d="M2.6 19.5V11.5L6.2 16.2L9.8 11.5V19.5 M14.2 11.5H21.4 M17.8 11.5V19.5" stroke="#ffffff" stroke-width="2.2"/>
-  </g>
+  <!-- Tờ giấy bản vẽ -->
+  <rect x="1.5" y="1" width="21" height="22" rx="1" fill="#ffffff" stroke="#2F4A3A" stroke-width="1.2"/>
+  <!-- Khung nhìn 1: mặt bằng -->
+  <rect x="3.5" y="3" width="9" height="8" fill="#EAF1F8" stroke="#1E5BD8" stroke-width="0.9"/>
+  <path d="M5 4.6H11V9.4H5Z M8 4.6V7.2 M5 7.2H6.6" fill="none" stroke="#1f2a24" stroke-width="0.8"/>
+  <!-- Khung nhìn 2: mặt đứng -->
+  <rect x="14" y="3" width="6.5" height="8" fill="#EAF1F8" stroke="#1E5BD8" stroke-width="0.9"/>
+  <path d="M15.3 9.6H19.2 M15.8 9.6V5.6H18.7V9.6" fill="none" stroke="#1f2a24" stroke-width="0.8"/>
+  <!-- Khung tên có chữ MT -->
+  <rect x="1.5" y="12.8" width="21" height="10.2" fill="#2F4A3A"/>
+  <path d="M5 20.8V15L8 18.8L11 15V20.8 M13 15H19.5 M16.25 15V20.8" fill="none" stroke="#C9A45C" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"/>
 </svg>

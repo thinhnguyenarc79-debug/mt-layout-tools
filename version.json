@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
-  "sha256": "db59149215da90b87f44b7e2a3bc5e5ab7336d14c8be79345e9bb0d8d8997060",
-  "notes": "Biểu tượng thanh công cụ có chữ MT."
+  "sha256": "646438c0db6b4bd693cd61eb63e0934a07be37b95aabc96d9a312986c5cc5188",
+  "notes": "Biểu tượng mới: tờ bản vẽ có 2 khung nhìn và khung tên MT."
 }
