@@ -19,8 +19,12 @@ module MTDesign
 
           module_function
 
-          def sub(a, b) = [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-          def dot(a, b) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+          def sub(a, b)
+            [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+          end
+          def dot(a, b)
+            a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+          end
 
           def cross(a, b)
             [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
@@ -107,8 +111,12 @@ module MTDesign
               @failed = false
             end
 
-            def failed? = @failed
-            def done? = @work && @work.empty?
+            def failed?
+              @failed
+            end
+            def done?
+              @work && @work.empty?
+            end
 
             def step(job)
               while @i < @src.length
@@ -195,7 +203,9 @@ module MTDesign
               @stack = nodes.empty? ? [] : [[0, true]]
             end
 
-            def done? = @stack.empty?
+            def done?
+              @stack.empty?
+            end
 
             # yield từng mảnh theo thứ tự vẽ; trả true khi xong
             def each_piece(job)
