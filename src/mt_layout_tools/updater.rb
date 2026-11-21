@@ -33,6 +33,7 @@ module MTDesign
             @busy = false
             Sketchup.status_text = ''
             Sketchup.write_default(PREF_KEY, 'last_check', Time.now.to_i) if ok
+            panel_status('')
             if ok
               handle_manifest(body, silent)
             elsif !silent
@@ -60,6 +61,19 @@ module MTDesign
           end
         rescue JSON::ParserError => e
           UI.messagebox("File version.json không hợp lệ: #{e.message}") unless silent
+        end
+
+        def panel_status(text)
+          LayoutTools::Panel.set_status(text) if LayoutTools.const_defined?(:Panel, false)
+        rescue StandardError
+          nil
+        end
+
+        def panel_refresh
+          return unless LayoutTools.const_defined?(:Panel, false)
+          LayoutTools::Panel.refresh_version
+        rescue StandardError
+          nil
         end
 
         def newer?(a, b)
@@ -107,6 +121,7 @@ module MTDesign
           File.delete(path) rescue nil
 
           reload_code
+          panel_refresh
           UI.messagebox("Đã cập nhật lên #{info['version']}.\n" \
                         'Chức năng đã áp dụng ngay. Nếu bản mới có thêm nút/menu, ' \
                         'khởi động lại SketchUp để hiện đủ.')

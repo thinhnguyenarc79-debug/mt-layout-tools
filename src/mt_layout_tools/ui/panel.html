@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px "Segoe UI", Arial, sans-serif; color: #1f2a24; background: #f6f5f0; }
+  header { background: #2F4A3A; color: #fff; padding: 10px 14px; }
+  header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  header small { color: #C9A45C; }
+  main { padding: 14px; }
+  button { display: block; width: 100%; padding: 9px; margin-bottom: 8px; border: 0; border-radius: 4px;
+           font: 600 13px "Segoe UI", Arial, sans-serif; cursor: pointer; }
+  .primary { background: #C9A45C; color: #1f2a24; }
+  .primary:hover { background: #b8934c; }
+  .ghost { background: #e4e2d9; color: #1f2a24; }
+  .ghost:hover { background: #d6d3c8; }
+  #status { min-height: 18px; font-size: 12px; color: #5b6660; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>MT Layout Tools</h1>
+    <small>Phiên bản <span id="ver">-</span></small>
+  </header>
+  <main>
+    <button class="primary" onclick="sketchup.update()">Cập nhật</button>
+    <button class="ghost" onclick="sketchup.about()">Thông tin phiên bản</button>
+    <div id="status"></div>
+  </main>
+<script>
+  function setVersion(v) { document.getElementById('ver').textContent = v; }
+  function setStatus(t) { document.getElementById('status').textContent = t; }
+  window.onload = function () { sketchup.ready(); };
+</script>
+</body>
+</html>

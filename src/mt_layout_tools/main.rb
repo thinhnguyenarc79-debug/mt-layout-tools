@@ -6,6 +6,7 @@ module MTDesign
 
     require File.join(PLUGIN_DIR, 'version')
     require File.join(PLUGIN_DIR, 'updater')
+    require File.join(PLUGIN_DIR, 'panel')
 
     def self.icon(name)
       File.join(PLUGIN_DIR, 'icons', "#{name}.svg")
@@ -16,21 +17,26 @@ module MTDesign
     end
 
     unless file_loaded?(__FILE__)
+      # Nút chính trên thanh công cụ: mở bảng MT Layout Tools.
+      cmd_panel = UI::Command.new('MT Layout Tools') { Panel.show }
+      cmd_panel.tooltip         = 'MT Layout Tools'
+      cmd_panel.status_bar_text = 'Mở bảng MT Layout Tools.'
+      cmd_panel.small_icon      = icon('mt_layout')
+      cmd_panel.large_icon      = icon('mt_layout')
+
       cmd_update = UI::Command.new('Cập nhật') { Updater.check(silent: false) }
-      cmd_update.tooltip         = 'Cập nhật MT Layout Tools'
       cmd_update.status_bar_text = 'Kiểm tra và cài bản mới nhất từ GitHub.'
-      cmd_update.small_icon      = icon('update')
-      cmd_update.large_icon      = icon('update')
 
       cmd_about = UI::Command.new('Thông tin phiên bản') { show_about }
 
       menu = UI.menu('Extensions').add_submenu('MT Layout Tools')
+      menu.add_item(cmd_panel)
       menu.add_item(cmd_update)
       menu.add_separator
       menu.add_item(cmd_about)
 
       tb = UI::Toolbar.new('MT Layout Tools')
-      tb.add_item(cmd_update)
+      tb.add_item(cmd_panel)
       tb.restore
 
       # Tự kiểm tra bản mới khi mở SketchUp (tối đa 1 lần/ngày, không làm phiền nếu không có bản mới).
