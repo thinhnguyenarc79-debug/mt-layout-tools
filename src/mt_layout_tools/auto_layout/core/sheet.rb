@@ -101,17 +101,67 @@ module MTDesign
         # views: mảng hình chiếu từ Geometry.project (đã gắn :key). mats: [{name,color}].
         # page: 'scale','fill','min_gap','round','offsets' {key=>[dx,dy]}, 'paper'. tb: thông tin khung tên.
         # Trả về info: scale, note, boxes {key=>[x,y,w,h]}, offsets (đã kẹp trong vùng vẽ).
+        # Dựng cả tờ trong 1 lần (đồng bộ). PageBuild gọi 3 bước prepare / draw_placement (mỗi hình 1 lô) / assemble.
         def render(cv, views, mats, page, tb, pw, ph, notes = [])
+          ctx = prepare(views, mats, page, pw, ph)
+          frags = ctx[:placements].map do |pl|
+            sub = Canvas.new(cv.fmt, pw, ph)
+            draw_placement(sub, ctx, pl, page)
+            sub.parts
+          end
+          assemble(cv, ctx, frags, page, tb, notes)
+        end
+
+        # Chọn tỉ lệ + vị trí từng hình (chưa vẽ). Trả về ngữ cảnh dùng cho các bước sau.
+        def prepare(views, mats, page, pw, ph)
           frame, tb_x, area = frames(pw, ph)
           aw = area[2] - area[0]
           legend = mats.first(14)
           legend_h = legend.empty? ? 0 : legend.length * 4.2 + 2
           ah = area[3] - area[1] - legend_h
           info = { 'note' => nil, 'boxes' => {}, 'offsets' => {}, 'frames' => {} }
+          ctx = { frame: frame, tb_x: tb_x, area: area, legend: legend, info: info, placements: [], empty: views.empty? }
           if views.empty?
             info['scale'] = page['scale'].to_i.positive? ? page['scale'].to_i : 20
             info['note'] = 'Trang chưa có hình chiếu nào.'
+            return ctx
+          end
+          auto = pick_scale(views, aw, ah)
+          want = page['scale'].to_i
+          if auto.nil?
+            scale = want.positive? ? want : SCALES.last
+            info['note'] = 'Đối tượng quá lớn cho khổ giấy này; hãy chọn khổ lớn hơn hoặc bớt hình.'
+          elsif want <= 0
+            scale = auto
+          elsif want < auto
+            scale = auto
+            info['note'] = "Tỉ lệ 1:#{want} không vừa khổ giấy, đã tự dùng 1:#{auto}."
+          else
+            scale = want
+          end
+          info['scale'] = scale
+          ctx[:scale] = scale
+          ctx[:placements] = place_views(views, scale, area, ah, page, info)
+          ctx
+        end
+
+        # Vẽ 1 hình đã xếp chỗ (1 lô của Job).
+        def draw_placement(cv, ctx, pl, page)
+          v, x, base = pl
+          cv.group('class' => 'view', 'data-key' => v[:key]) do
+            ctx[:info]['frames'][v[:key]] = draw_view(cv, v, ctx[:scale], x, base, page)
+          end
+        end
+
+        # Ghép các mảnh hình + bảng vật liệu + chú thích + khung + khung tên.
+        def assemble(cv, ctx, frags, page, tb, notes = [])
+          frame = ctx[:frame]
+          tb_x = ctx[:tb_x]
+          area = ctx[:area]
+          info = ctx[:info]
+          if ctx[:empty]
             # Không để trang trắng im lặng: in rõ lý do lên giấy.
+            aw = area[2] - area[0]
             msgs = ['CHƯA DỰNG ĐƯỢC HÌNH CHIẾU CHO TRANG NÀY'] + (notes.empty? ? ['Chưa chọn hình chiếu nào.'] : notes)
             cx = (area[0] + area[2]) / 2
             y = (area[1] + area[3]) / 2 - msgs.length * 3
@@ -122,32 +172,19 @@ module MTDesign
               end
             end
           else
-            auto = pick_scale(views, aw, ah)
-            want = page['scale'].to_i
-            if auto.nil?
-              scale = want.positive? ? want : SCALES.last
-              info['note'] = 'Đối tượng quá lớn cho khổ giấy này; hãy chọn khổ lớn hơn hoặc bớt hình.'
-            elsif want <= 0
-              scale = auto
-            elsif want < auto
-              scale = auto
-              info['note'] = "Tỉ lệ 1:#{want} không vừa khổ giấy, đã tự dùng 1:#{auto}."
-            else
-              scale = want
-            end
-            info['scale'] = scale
             cv.clip(frame[0] + 1.2, frame[1] + 1.2, tb_x - frame[0] - 1.2, frame[3] - frame[1] - 2.4) do
-              draw_views(cv, views, scale, area, ah, page, info)
+              frags.each { |f| cv.raw(f) }
             end
           end
-          draw_legend(cv, legend, area)
+          draw_legend(cv, ctx[:legend], area)
           AnnotationEngine.draw(cv, page['notes'], Array(page['hidden_layers']))
           draw_frame(cv, frame, tb_x)
           draw_title_block(cv, tb, info['scale'], frame, tb_x)
           info
         end
 
-        def draw_views(cv, views, s, area, ah, page, info)
+        # Vị trí từng hình: [[view, x, base]] đã cộng dịch chuyển của người dùng và kẹp trong vùng vẽ.
+        def place_views(views, s, area, ah, page, info)
           aw = area[2] - area[0]
           pl = plan(views, s, aw, ah)
           x0 = area[0] + [(aw - pl[:w]) / 2, 0].max
@@ -169,7 +206,7 @@ module MTDesign
             slots << [iso, x0 + pl[:rows_w] + GAP, y0 + (pl[:h] + box_h(iso, s)) / 2 - M_BOTTOM]
           end
           offs = page['offsets'] || {}
-          slots.each do |v, x, base|
+          slots.map do |v, x, base|
             bw, bh = box_w(v, s), box_h(v, s)
             bx, by = x, base + M_BOTTOM - bh
             dx, dy = Array(offs[v[:key]]).map(&:to_f)
@@ -180,9 +217,7 @@ module MTDesign
             dy = dy.clamp(area[1] - by, [area[3] - by - bh, area[1] - by].max)
             info['offsets'][v[:key]] = [dx.round(2), dy.round(2)]
             info['boxes'][v[:key]] = [bx + dx, by + dy, bw, bh].map { |n| n.round(2) }
-            cv.group('class' => 'view', 'data-key' => v[:key]) do
-              info['frames'][v[:key]] = draw_view(cv, v, s, x + dx, base + dy, page)
-            end
+            [v, x + dx, base + dy]
           end
         end
 
@@ -196,7 +231,7 @@ module MTDesign
             draw_detail(cv, v, s, ox, oy, page)
           else
             v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
-            chain(v[:lines].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.25, INK) }
+            polylines(v, tf).each { |pl| cv.polyline(pl, 0.25, INK) }
             draw_cut(cv, v, tf)
             section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
             detail_marks(cv, v, tf, s, page['details'])
@@ -247,6 +282,89 @@ module MTDesign
               cv.circle(c, 2.0, '#FFFFFF', CUT_RED, 0.3)
               cv.text(d['n'].to_s, c[0], c[1], 2.4, 0, CUT_RED)
             end
+          end
+        end
+
+        # Đường gấp khúc của hình (đã nối sẵn theo lô bởi ChainBuilder nếu có), đổi sang giấy rồi rút gọn điểm.
+        def polylines(v, tf)
+          return chain(v[:lines].map { |a, b| [tf.call(a), tf.call(b)] }) unless v[:chains]
+
+          v[:chains].map { |pl| pl.map(&tf) }
+        end
+
+        # Nối đoạn thành đường gấp khúc theo lô (máy trạng thái cho Job). Toạ độ thật của hình chiếu.
+        class ChainBuilder
+          attr_reader :result
+
+          def initialize(lines)
+            @segs = lines
+            @ends = Hash.new { |h, k| h[k] = [] }
+            @used = Array.new(lines.length, false)
+            @i = 0
+            @phase = :index
+            @result = []
+          end
+
+          def key(p)
+            [(p[0] * 100).round, (p[1] * 100).round]
+          end
+
+          # Rút gọn điểm với sai lệch 0,1 mm thật (= 0,02 mm trên giấy ở tỉ lệ 1:5, nhỏ hơn nét in).
+          SIMPLIFY_TOL = 0.1
+
+          def call(job)
+            return simplify_step(job) if @phase == :simplify
+            if @phase == :index
+              while @i < @segs.length
+                return false if (@i % 2048).zero? && @i.positive? && job.time_up?
+
+                a, b = @segs[@i]
+                @ends[key(a)] << @i
+                @ends[key(b)] << @i
+                @i += 1
+              end
+              @phase = :walk
+              @i = 0
+            end
+            while @i < @segs.length
+              return false if (@i % 512).zero? && @i.positive? && job.time_up?
+
+              walk(@i) unless @used[@i]
+              @i += 1
+            end
+            @ends = @used = nil
+            @phase = :simplify
+            @i = 0
+            simplify_step(job)
+          end
+
+          def simplify_step(job)
+            while @i < @result.length
+              return false if (@i % 256).zero? && @i.positive? && job.time_up?
+
+              @result[@i] = Sheet.simplify(@result[@i], SIMPLIFY_TOL)
+              @i += 1
+            end
+            @phase = :done
+            true
+          end
+
+          def walk(i)
+            @used[i] = true
+            pts = @segs[i].dup
+            [true, false].each do |forward|
+              loop do
+                tip = forward ? pts.last : pts.first
+                j = @ends[key(tip)].find { |k| !@used[k] }
+                break unless j
+
+                @used[j] = true
+                a, b = @segs[j]
+                nxt = key(a) == key(tip) ? b : a
+                forward ? pts.push(nxt) : pts.unshift(nxt)
+              end
+            end
+            @result << pts
           end
         end
 

@@ -36,6 +36,13 @@ module MTDesign
           out
         end
 
+        # Mốc DIM của 1 hình (có cache theo khoảng gộp – tính trước theo lô trong PageBuild).
+        def view_breaks(view, gap)
+          view[:dim_cache] ||= {}
+          view[:dim_cache][gap.to_f] ||= [breaks(view[:lines], 0, view[:w], [view[:h] * 0.3, 150.0].min, gap),
+                                          breaks(view[:lines], 1, view[:h], [view[:w] * 0.3, 150.0].min, gap)]
+        end
+
         # Số ghi trên DIM: mm, làm tròn theo bước round_to.
         def label(len, round_to = 1)
           r = round_to.to_f <= 0 ? 1.0 : round_to.to_f
@@ -48,8 +55,7 @@ module MTDesign
           w, h = view[:w], view[:h]
           gap = opts.fetch('min_gap', 0).to_f
           rnd = opts.fetch('round', 1)
-          xs = breaks(view[:lines], 0, w, [h * 0.3, 150.0].min, gap)
-          ys = breaks(view[:lines], 1, h, [w * 0.3, 150.0].min, gap)
+          xs, ys = view_breaks(view, gap)
           if xs.length > 2
             horizontal(cv, xs, s, ox, oy, oy - TIER1, rnd)
             horizontal(cv, [0, w], s, ox, oy, oy - TIER2, rnd)

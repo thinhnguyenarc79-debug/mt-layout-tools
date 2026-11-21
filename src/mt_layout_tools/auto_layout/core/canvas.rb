@@ -167,6 +167,15 @@ module MTDesign
           @out.join("\n") + "\n"
         end
 
+        # Mảnh nội dung vẽ riêng (để dựng từng hình ở bước riêng rồi ghép lại).
+        def parts
+          @fmt == :pdf ? @out[1..-1] : @out
+        end
+
+        def raw(parts)
+          @out.concat(parts)
+        end
+
         def svg
           %(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 #{n(@pw)} #{n(@ph)}" width="#{n(@pw)}mm" height="#{n(@ph)}mm" ) +
             %(stroke-linecap="round" stroke-linejoin="round" font-family="MTNoto, 'Noto Sans', 'Segoe UI', Arial">) +

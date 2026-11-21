@@ -1,7 +1,7 @@
 {
-  "version": "2.3.0",
+  "version": "2.3.1",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "2db7ead9ba9977d0042e2b563fe9516f88f7137197836a63ec733a255a548929",
-  "notes": "Chú thích Text / nhiều dòng / Leader / ghi chú vật liệu (sửa nội dung, cỡ chữ, màu, mũi tên, layer; kéo dời; Undo; xuất PDF/SVG). Chi tiết phóng to: khoanh vùng trên hình chiếu hoặc mặt cắt, tỉ lệ riêng, nét & hatch & DIM thật."
+  "sha256": "115547d284dfd28607f7e7f12128d845c301fa75f5361ac07b10870ed589bbdd",
+  "notes": "Sửa FiberError: thay Fiber bằng Job Engine máy trạng thái (UI.start_timer, mỗi lô ~80 ms). Đọc Group/Component, chiếu, khử nét khuất (kể cả từng cạnh nặng), mặt cắt, nối nét, mốc DIM, vẽ từng hình đều chia lô tiếp tục được; có tiến trình, Huỷ, log."
 }

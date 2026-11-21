@@ -113,10 +113,9 @@ module MTDesign
         # ---------------- lưới không gian ----------------
         # Chia mặt phẳng hình chiếu thành ô; mỗi ô giữ chỉ số tam giác phủ lên nó.
         class Grid
-          attr_reader :big
-
-          def initialize(tris, idx, l, t, w, h)
-            n = [[Math.sqrt(idx.length) * 1.5, 8].max, 256].min.ceil
+          def initialize(tris, l, t, w, h, count)
+            n = [[Math.sqrt(count) * 1.5, 8].max, 256].min.ceil
+            @tris = tris
             @cell = [[w, h].max / n, 1.0].max
             @l = l
             @t = t
@@ -124,17 +123,19 @@ module MTDesign
             @ny = (h / @cell).floor + 1
             @cells = Array.new(@nx * @ny)
             @big = [] # tam giác phủ quá nhiều ô: luôn đem ra thử
-            idx.each do |i|
-              bb = tris[i][2]
-              x0, x1, y0, y1 = range(bb[0], bb[1], bb[2], bb[3])
-              if (x1 - x0 + 1) * (y1 - y0 + 1) > 2048
-                @big << i
-                next
-              end
-              y0.upto(y1) do |cy|
-                row = cy * @nx
-                x0.upto(x1) { |cx| (@cells[row + cx] ||= []) << i }
-              end
+          end
+
+          # Thêm 1 tam giác (gọi dần từng cái để có thể dừng/tiếp giữa chừng).
+          def insert(i)
+            bb = @tris[i][2]
+            x0, x1, y0, y1 = range(bb[0], bb[1], bb[2], bb[3])
+            if (x1 - x0 + 1) * (y1 - y0 + 1) > 2048
+              @big << i
+              return
+            end
+            y0.upto(y1) do |cy|
+              row = cy * @nx
+              x0.upto(x1) { |cx| (@cells[row + cx] ||= []) << i }
             end
           end
 
@@ -147,7 +148,6 @@ module MTDesign
             v.negative? ? 0 : (v >= n ? n - 1 : v)
           end
 
-          # Gọi khối với mỗi chỉ số tam giác (có thể lặp – người gọi tự lọc bằng dấu).
           def each_candidate(l, r, t, b)
             x0, x1, y0, y1 = range(l, r, t, b)
             y0.upto(y1) do |cy|
@@ -162,131 +162,275 @@ module MTDesign
         end
 
         # ---------------- chiếu 1 hình ----------------
-        # Trả về { key, name, lines, fills, w, h, dims, level, notes, stats }.
-        # vdef: [tên, phép chiếu] cho hình tuỳ biến (mặt cắt); mặc định lấy theo key trong VIEWS.
+        # Bản đồng bộ (test, công cụ): chạy Projector tới khi xong.
         def project(cap, key, job = nil, budget = [BUDGET_L1, BUDGET_L2], vdef = nil)
-          title, fn = vdef || VIEWS.fetch(key)
-          clock = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
-          t_start = clock.call
-          notes = []
-
-          # 1. Chiếu tam giác: [[a,b,c], area, [l,r,t,b], maxdepth, mat_key, raw3d]
-          tris = []
-          cap.triangles.each_with_index do |tr, i|
-            job&.progress("#{title}: chiếu tam giác #{i}/#{cap.triangles.length}", 5) if (i & 4095).zero?
-            a = fn.call(tr[0])
-            b = fn.call(tr[1])
-            c = fn.call(tr[2])
-            area = cross(a, b, c)
-            next if area.abs < 1.0e-6
-
-            xs = [a[0], b[0], c[0]]
-            ys = [a[1], b[1], c[1]]
-            tris << [[a, b, c], area, [xs.min, xs.max, ys.min, ys.max], [a[2], b[2], c[2]].max, tr[3], tr]
-          end
-
-          # 2. Chiếu cạnh, bỏ cạnh suy biến và cạnh trùng sau khi chiếu.
-          segs = []
-          seen = {}
-          l = t = Float::INFINITY
-          r = b = -Float::INFINITY
-          cap.edges.each_with_index do |e, i|
-            job&.progress("#{title}: chiếu cạnh #{i}/#{cap.edges.length}", 10) if (i & 4095).zero?
-            p = fn.call(e[0])
-            q = fn.call(e[1])
-            l = p[0] if p[0] < l
-            l = q[0] if q[0] < l
-            r = p[0] if p[0] > r
-            r = q[0] if q[0] > r
-            t = p[1] if p[1] < t
-            t = q[1] if q[1] < t
-            b = p[1] if p[1] > b
-            b = q[1] if q[1] > b
-            next if Math.hypot(q[0] - p[0], q[1] - p[1]) < MIN_EDGE
-
-            k = [(p[0] * 20).round, (p[1] * 20).round, (q[0] * 20).round, (q[1] * 20).round]
-            k = [k[2], k[3], k[0], k[1]] if k[2] < k[0] || (k[2] == k[0] && k[3] < k[1])
-            prev = seen[k]
-            if prev
-              # cạnh trùng: giữ cạnh gần người nhìn hơn (độ sâu lớn hơn)
-              segs[prev] = [p, q] if p[2] + q[2] > segs[prev][0][2] + segs[prev][1][2]
-              next
-            end
-            seen[k] = segs.length
-            segs << [p, q]
-          end
-          raise ArgumentError, "#{title}: không có cạnh nào sau khi chiếu." if segs.empty?
-
-          w = r - l
-          h = b - t
-          stats = { 'tris' => tris.length, 'edges_in' => cap.edges.length, 'edges' => segs.length }
-
-          # 3. Khử nét khuất theo mức.
-          lines = []
-          level = 1
-          deadline = clock.call + budget[0]
-          occluders = (0...tris.length).to_a
-          grid = Grid.new(tris, occluders, l, t, w, h)
-          stamp = Array.new(tris.length, -1)
-          i = 0
-          n = segs.length
-          while i < n
-            if level < 3 && clock.call > deadline
-              level += 1
-              if level == 2
-                occluders = (0...tris.length).sort_by { |k| -tris[k][1].abs }.first(L2_OCCLUDERS)
-                grid = Grid.new(tris, occluders, l, t, w, h)
-                deadline = clock.call + budget[1]
-                notes << "#{title}: mô hình nặng – #{i}/#{n} cạnh khử nét đầy đủ, phần còn lại chỉ dùng #{occluders.length} mặt lớn để che."
-              else
-                notes << "#{title}: BẢN XEM TRƯỚC CHƯA ĐẦY ĐỦ – #{n - i}/#{n} cạnh chưa khử nét khuất (vẽ từ hình học thật)."
-              end
-            end
-            seg = segs[i]
-            if level == 3
-              lines << [[seg[0][0] - l, seg[0][1] - t], [seg[1][0] - l, seg[1][1] - t]]
-            else
-              visible_parts(seg, tris, grid, stamp, i).each do |p, q|
-                lines << [[p[0] - l, p[1] - t], [q[0] - l, q[1] - t]]
-              end
-            end
-            job&.progress("#{title}: khử nét khuất #{i}/#{n} (mức #{level})", 15 + 80.0 * i / n) if (i & 255).zero?
-            i += 1
-          end
-
-          # 4. Tô màu theo vật liệu (thuật toán hoạ sĩ). Quá nặng thì bỏ tô, ghi chú.
-          fills = []
-          if tris.length > MAX_FILL
-            notes << "#{title}: #{tris.length} tam giác – không tô màu để file nhẹ."
-          else
-            shade = key == 'iso'
-            src = tris
-            if shade && tris.length < 4000
-              lim = [w, h].max / 8.0
-              src = tris.flat_map { |tr| subdivide(tr, lim, 3) }
-            end
-            src.sort_by { |tr| tr[0][0][2] + tr[0][1][2] + tr[0][2][2] }.each_with_index do |tr, k|
-              job&.tick if (k & 4095).zero?
-              color = tr[4] && cap.materials[tr[4]] ? cap.materials[tr[4]]['color'] : DEFAULT_COLOR
-              color = shaded(color, tr[5]) if shade
-              fills << [tr[0].map { |pt| [pt[0] - l, pt[1] - t] }, color]
-            end
-          end
-          stats['level'] = level
-          stats['lines'] = lines.length
-          stats['seconds'] = (clock.call - t_start).round(2)
-          { key: key, name: title, lines: lines, fills: fills, w: w, h: h, dims: key != 'iso',
-            level: level, notes: notes, stats: stats, origin: [l, t], fn: fn }
+          pr = Projector.new(cap, key, budget, vdef)
+          ctx = job || NO_JOB
+          nil until pr.call(ctx)
+          pr.result
         end
 
-        def visible_parts(seg, tris, grid, stamp, sid)
+        # Ngữ cảnh rỗng khi chạy đồng bộ: không bao giờ hết giờ.
+        NO_JOB = Object.new
+        def NO_JOB.time_up?
+          false
+        end
+
+        def NO_JOB.progress(*)
+          nil
+        end
+
+        # Dựng 1 hình chiếu dạng máy trạng thái: mỗi lần call xử lý tới khi job.time_up? rồi trả false,
+        # lưu lại pha + chỉ số để lần sau làm tiếp. Trả true khi xong (kết quả ở #result).
+        # Pha: :tris -> :edges -> :grid -> :hidden (<-> :grid khi đổi mức) -> :fill_sort -> :fill -> xong.
+        class Projector
+          attr_reader :result
+
+          CHECK = 128 # số phần tử giữa 2 lần xem đồng hồ
+
+          def initialize(cap, key, budget = [BUDGET_L1, BUDGET_L2], vdef = nil)
+            @cap = cap
+            @key = key
+            @title, @fn = vdef || VIEWS.fetch(key)
+            @budget = budget
+            @phase = :tris
+            @i = 0
+            @tris = []
+            @segs = []
+            @seen = {}
+            @l = @t = Float::INFINITY
+            @r = @b = -Float::INFINITY
+            @lines = []
+            @notes = []
+            @fills = []
+            @level = 1
+            @busy = 0.0 # thời gian xử lý thực (không tính lúc nhường SketchUp)
+          end
+
+          def now
+            Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          end
+
+          def call(job)
+            t0 = now
+            @call_start = t0
+            done = run(job)
+            @busy += now - t0
+            done
+          end
+
+          private
+
+          def pause?(job, i)
+            (i % CHECK).zero? && job.time_up?
+          end
+
+          def run(job)
+            loop do
+              case @phase
+              when :tris then return false unless phase_tris(job)
+              when :edges then return false unless phase_edges(job)
+              when :grid then return false unless phase_grid(job)
+              when :hidden then return false unless phase_hidden(job)
+              when :fill_sort then phase_fill_sort
+              when :fill then return false unless phase_fill(job)
+              when :done then return true
+              end
+            end
+          end
+
+          def phase_tris(job)
+            src = @cap.triangles
+            n = src.length
+            while @i < n
+              if pause?(job, @i)
+                job.progress("#{@title}: chiếu tam giác #{@i}/#{n}", 5)
+                return false
+              end
+              tr = src[@i]
+              @i += 1
+              a = @fn.call(tr[0])
+              b = @fn.call(tr[1])
+              c = @fn.call(tr[2])
+              area = Geometry.cross(a, b, c)
+              next if area.abs < 1.0e-6
+
+              xs = [a[0], b[0], c[0]]
+              ys = [a[1], b[1], c[1]]
+              @tris << [[a, b, c], area, [xs.min, xs.max, ys.min, ys.max], [a[2], b[2], c[2]].max, tr[3], tr]
+            end
+            @phase = :edges
+            @i = 0
+            true
+          end
+
+          def phase_edges(job)
+            src = @cap.edges
+            n = src.length
+            while @i < n
+              if pause?(job, @i)
+                job.progress("#{@title}: chiếu cạnh #{@i}/#{n}", 10)
+                return false
+              end
+              e = src[@i]
+              @i += 1
+              p = @fn.call(e[0])
+              q = @fn.call(e[1])
+              @l = p[0] if p[0] < @l
+              @l = q[0] if q[0] < @l
+              @r = p[0] if p[0] > @r
+              @r = q[0] if q[0] > @r
+              @t = p[1] if p[1] < @t
+              @t = q[1] if q[1] < @t
+              @b = p[1] if p[1] > @b
+              @b = q[1] if q[1] > @b
+              next if Math.hypot(q[0] - p[0], q[1] - p[1]) < MIN_EDGE
+
+              k = [(p[0] * 20).round, (p[1] * 20).round, (q[0] * 20).round, (q[1] * 20).round]
+              k = [k[2], k[3], k[0], k[1]] if k[2] < k[0] || (k[2] == k[0] && k[3] < k[1])
+              prev = @seen[k]
+              if prev
+                # cạnh trùng sau khi chiếu: giữ cạnh gần người nhìn hơn
+                @segs[prev] = [p, q] if p[2] + q[2] > @segs[prev][0][2] + @segs[prev][1][2]
+                next
+              end
+              @seen[k] = @segs.length
+              @segs << [p, q]
+            end
+            raise ArgumentError, "#{@title}: không có cạnh nào sau khi chiếu." if @segs.empty?
+
+            @seen = nil
+            @w = @r - @l
+            @h = @b - @t
+            @stamp = Array.new(@tris.length, -1)
+            @occluders = (0...@tris.length).to_a
+            @grid = Grid.new(@tris, @l, @t, @w, @h, @occluders.length)
+            @gi = 0
+            @phase = :grid
+            @seg_i ||= 0
+            true
+          end
+
+          def phase_grid(job)
+            n = @occluders.length
+            while @gi < n
+              if pause?(job, @gi)
+                job.progress("#{@title}: lập lưới tìm kiếm #{@gi}/#{n}", 12)
+                return false
+              end
+              @grid.insert(@occluders[@gi])
+              @gi += 1
+            end
+            @phase = :hidden
+            @deadline ||= @busy + @budget[0]
+            true
+          end
+
+          # Khử nét theo từng cạnh; một cạnh có rất nhiều tam giác ứng viên cũng được chia lô
+          # (lưu @cur = ứng viên + vị trí + các khoảng bị che) để không lô nào kéo dài.
+          def phase_hidden(job)
+            n = @segs.length
+            while @seg_i < n
+              if job.time_up?
+                job.progress("#{@title}: khử nét khuất #{@seg_i}/#{n} (mức #{@level})", 15 + 80.0 * @seg_i / n)
+                return false
+              end
+              return switch_level if @level < 3 && @busy + (now - @call_start) > @deadline
+
+              seg = @segs[@seg_i]
+              if @level == 3
+                @lines << [[seg[0][0] - @l, seg[0][1] - @t], [seg[1][0] - @l, seg[1][1] - @t]]
+              else
+                @cur ||= { cands: Geometry.candidates(seg, @tris, @grid, @stamp, @seg_i), ci: 0, hidden: [] }
+                cands = @cur[:cands]
+                while @cur[:ci] < cands.length
+                  return false if (@cur[:ci] % 256).zero? && @cur[:ci].positive? && job.time_up?
+
+                  tr = @tris[cands[@cur[:ci]]]
+                  @cur[:ci] += 1
+                  iv = Geometry.hidden_interval(seg, tr[0], tr[1])
+                  @cur[:hidden] << iv if iv
+                end
+                Geometry.merge_visible(seg, @cur[:hidden]).each do |p, q|
+                  @lines << [[p[0] - @l, p[1] - @t], [q[0] - @l, q[1] - @t]]
+                end
+                @cur = nil
+              end
+              @seg_i += 1
+            end
+            @phase = :fill_sort
+            true
+          end
+
+          # Mức 1 quá lâu -> mức 2 (chỉ mặt lớn che, lập lưới mới) -> mức 3 (nét thật chưa khử).
+          def switch_level
+            @cur = nil # cạnh đang làm dở sẽ làm lại ở mức mới
+            @level += 1
+            n = @segs.length
+            if @level == 2
+              @occluders = (0...@tris.length).sort_by { |k| -@tris[k][1].abs }.first(L2_OCCLUDERS)
+              @grid = Grid.new(@tris, @l, @t, @w, @h, @occluders.length)
+              @gi = 0
+              @deadline = @busy + @budget[1]
+              @phase = :grid
+              @notes << "#{@title}: mô hình nặng – #{@seg_i}/#{n} cạnh khử nét đầy đủ, phần còn lại chỉ dùng #{@occluders.length} mặt lớn để che."
+            else
+              @notes << "#{@title}: BẢN XEM TRƯỚC CHƯA ĐẦY ĐỦ – #{n - @seg_i}/#{n} cạnh chưa khử nét khuất (vẽ từ hình học thật)."
+            end
+            false
+          end
+
+          def phase_fill_sort
+            if @tris.length > MAX_FILL
+              @notes << "#{@title}: #{@tris.length} tam giác – không tô màu để file nhẹ."
+              @src = []
+            else
+              shade = @key == 'iso'
+              @src = @tris
+              if shade && @tris.length < 4000
+                lim = [@w, @h].max / 8.0
+                @src = @tris.flat_map { |tr| Geometry.subdivide(tr, lim, 3) }
+              end
+              @src = @src.sort_by { |tr| tr[0][0][2] + tr[0][1][2] + tr[0][2][2] }
+            end
+            @i = 0
+            @phase = :fill
+          end
+
+          def phase_fill(job)
+            shade = @key == 'iso'
+            n = @src.length
+            while @i < n
+              if pause?(job, @i)
+                job.progress("#{@title}: tô màu #{@i}/#{n}", 97)
+                return false
+              end
+              tr = @src[@i]
+              @i += 1
+              mats = @cap.materials
+              color = tr[4] && mats[tr[4]] ? mats[tr[4]]['color'] : DEFAULT_COLOR
+              color = Geometry.shaded(color, tr[5]) if shade
+              @fills << [tr[0].map { |pt| [pt[0] - @l, pt[1] - @t] }, color]
+            end
+            stats = { 'tris' => @tris.length, 'edges_in' => @cap.edges.length, 'edges' => @segs.length,
+                      'level' => @level, 'lines' => @lines.length, 'seconds' => @busy.round(2) }
+            @result = { key: @key, name: @title, lines: @lines, fills: @fills, w: @w, h: @h, dims: @key != 'iso',
+                        level: @level, notes: @notes, stats: stats, origin: [@l, @t], fn: @fn }
+            @tris = @src = @stamp = @grid = nil # giải phóng bộ nhớ
+            @phase = :done
+            true
+          end
+        end
+
+        # Ứng viên che cạnh: tam giác trong các ô lưới cạnh đi qua, nằm trước cạnh, hộp bao giao nhau.
+        def candidates(seg, tris, grid, stamp, sid)
           a, b = seg
           l = a[0] < b[0] ? a[0] : b[0]
           r = a[0] < b[0] ? b[0] : a[0]
           t = a[1] < b[1] ? a[1] : b[1]
           btm = a[1] < b[1] ? b[1] : a[1]
           zmin = (a[2] < b[2] ? a[2] : b[2]) + DEPTH_TOL
-          hidden = []
+          out = []
           grid.each_candidate(l, r, t, btm) do |k|
             next if stamp[k] == sid
 
@@ -297,9 +441,14 @@ module MTDesign
             bb = tr[2]
             next if bb[0] > r || bb[1] < l || bb[2] > btm || bb[3] < t
 
-            iv = hidden_interval(seg, tr[0], tr[1])
-            hidden << iv if iv
+            out << k
           end
+          out
+        end
+
+        # Từ các khoảng bị che -> các đoạn còn thấy.
+        def merge_visible(seg, hidden)
+          a, b = seg
           return [[a, b]] if hidden.empty?
 
           hidden.sort_by!(&:first)
@@ -314,6 +463,11 @@ module MTDesign
           vis << [cur, 1.0] if 1.0 - cur > EPS
           vis.map { |rg| rg.map { |k| [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k] } }
              .reject { |p, q| Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.2 }
+        end
+
+        def visible_parts(seg, tris, grid, stamp, sid)
+          hidden = candidates(seg, tris, grid, stamp, sid).filter_map { |k| hidden_interval(seg, tris[k][0], tris[k][1]) }
+          merge_visible(seg, hidden)
         end
 
         # Chia nhỏ tam giác lớn để tô màu đúng trước/sau (chỉ dùng cho trục đo ít tam giác).

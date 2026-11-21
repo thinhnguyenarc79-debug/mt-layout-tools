@@ -93,11 +93,9 @@ class TestLargeModel < Minitest::Test
     assert_equal 4, AL::Geometry.project(cap, 'front')[:lines].length
   end
 
-  def test_job_chay_dong_bo_va_huy
-    j = AL::Job.new { |job| 5.times { job.tick }; 42 }
-    assert_equal 42, j.run_sync
-    j2 = AL::Job.new { |job| job.cancel!; job.tick }
-    assert_raises(AL::Job::Cancelled) { j2.run_sync }
+  def test_job_engine_khong_dung_fiber
+    src = Dir[File.join(ROOT, '**', '*.rb')].map { |f| File.read(f, encoding: 'UTF-8') }.join
+    refute_match(/Fiber|Thread\.new/, src.gsub(/#.*$/, ''), 'không còn Fiber/Thread trong mã chạy')
   end
 end
 
