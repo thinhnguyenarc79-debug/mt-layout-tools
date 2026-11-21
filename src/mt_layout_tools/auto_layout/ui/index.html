@@ -152,6 +152,8 @@
     <h3>Cấu tạo tủ</h3>
     <div class="body" id="partBox">
       <div id="partModel" class="pmodel"></div>
+      <div class="btns"><button id="scanParts" class="gold" title="Đọc lại hình học model đang mở và nhận diện cánh, vách, đợt... (không sửa model)">QUÉT VÀ NHẬN DIỆN CẤU TẠO</button></div>
+      <div id="scanSum" class="scansum"></div>
       <div id="partCounts"></div>
       <div class="row" style="align-items:flex-end">
         <div><label>Gán phần đang chọn trong SketchUp là</label><select id="assignRole"></select></div>
@@ -161,6 +163,7 @@
         <div><input id="partSearch" type="text" placeholder="Lọc tên / kích thước..."></div>
         <div><select id="partFilter"></select></div>
       </div>
+      <div class="row"><div><select id="partCluster" title="Cụm tủ trong model (vd. từng tủ của bộ bếp) – chỉ để lọc"></select></div></div>
       <div class="bulk" id="partBulk">
         <span id="partSelN">0 đã tick</span>
         <select id="bulkRole"></select><button id="bulkBtn" class="gold">Gán</button><button id="bulkClear" title="Bỏ tick tất cả">✕</button>

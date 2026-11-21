@@ -129,7 +129,9 @@ module MTDesign
                                              'offsets' => {})
             if old
               # dựng lại trang: giữ ký hiệu cánh và các hình đã KHÓA (tỉ lệ / vị trí) – không tự mở khóa
-              keep = (old['view_props'] || {}).select { |_k, vp| vp['scale_locked'] || vp['position_locked'] }
+              keep = (old['view_props'] || {}).select do |_k, vp|
+                vp['scale_locked'] || vp['position_locked'] || vp['placement_mode'] == 'manual'
+              end
               # và phân loại bộ phận gán tay (roles) – không ghi đè dữ liệu người dùng khi triển khai lại
               base = base.merge('view_props' => keep, 'door_symbols' => old['door_symbols'] || {}, 'roles' => old['roles'] || {},
                                 'offsets' => (old['offsets'] || {}).select { |k, _| keep[k] && keep[k]['position_locked'] })
@@ -226,9 +228,15 @@ module MTDesign
             sc = nil unless sc.between?(1, 500)
             locked = v['scale_locked'] == true && !sc.nil?
             pos = v['position_locked'] == true
-            next if sc.nil? && !pos
+            # vị trí thủ công: toạ độ mm trên giấy (góc trên-trái khung hình) + tờ chứa hình
+            manual = v['placement_mode'] == 'manual' && v['x_mm'].is_a?(Numeric) && v['y_mm'].is_a?(Numeric)
+            next if sc.nil? && !pos && !manual
 
-            h[k.to_s] = { 'scale_override' => sc, 'scale_locked' => locked, 'position_locked' => pos }
+            h[k.to_s] = { 'scale_override' => sc, 'scale_locked' => locked, 'position_locked' => pos,
+                          'placement_mode' => manual ? 'manual' : 'auto',
+                          'x_mm' => manual ? v['x_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
+                          'y_mm' => manual ? v['y_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
+                          'sheet' => manual ? v['sheet'].to_i.clamp(0, 49) : nil }
           end
         end
 

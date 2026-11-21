@@ -281,20 +281,30 @@ module MTDesign
                   else
                     (0..2).map { |k| [big.map { |pt| pt['bounds'][k][0] }.min, big.map { |pt| pt['bounds'][k][1] }.max] }
                   end
-            @cap.parts.each_with_index do |pt, i|
-              next if pt['role']
-
-              mkey = @part_mats[i].max_by { |_, n| n }&.first
-              mname = mkey && @cap.materials[mkey] ? @cap.materials[mkey]['name'] : nil
-              valid = pt['bounds'].all? { |lo, hi| lo.finite? && hi.finite? }
-              role, why = valid ? PartClassifier.geometric(pt['bounds'], ext, mname) : ['unknown', 'không có cạnh']
-              pt['role'] = role
-              pt['source'] = role == 'glass' ? why : "hình học: #{why}"
-              pt['sure'] = false
+            # Bộ phận chưa có vai trò chắc chắn -> nhận diện tổng quát theo hình học thật (đề xuất, chờ xác nhận).
+            geo = Hash.new { |h, k| h[k] = [[], []] }
+            @cap.edges.each_with_index do |(a, b), k|
+              pid = @cap.edge_part[k]
+              geo[pid][0] << a << b if pid
             end
+            @cap.triangles.each_with_index do |t, k|
+              pid = @cap.tri_part[k]
+              next unless pid
+
+              geo[pid][0] << t[0] << t[1] << t[2]
+              geo[pid][1] << t
+            end
+            mats = {}
+            @cap.parts.each_with_index do |_pt, i|
+              mkey = @part_mats[i].max_by { |_, n| n }&.first
+              mats[i] = mkey && @cap.materials[mkey] ? @cap.materials[mkey]['name'] : nil
+            end
+            @cap.parts.each { |pt| pt['confidence'] = 1.0 if pt['role'] && pt['sure'] }
+            CabinetRecognizer.run(@cap.parts, geo, mats)
             door_idx = {}
+            # Chỉ cánh ĐÃ XÁC NHẬN (gán tay / thuộc tính / Tag / tên) mới dùng để bỏ cánh & ghi DIM cánh.
             @cap.parts.each do |pt|
-              next unless pt['role'] == 'door'
+              next unless pt['role'] == 'door' && pt['sure']
 
               door_idx[pt['id']] = @cap.doors.length
               @cap.doors << { 'id' => @cap.doors.length, 'part' => pt['id'], 'path' => pt['path'], 'name' => pt['name'],
@@ -369,6 +379,9 @@ module MTDesign
               path = @path.empty? ? pid.to_s : "#{@path}/#{pid}"
               @seen_paths[path] = true
               name = info ? (info[:name].empty? ? info[:def_name] : info[:name]) : ''
+              if @path.empty? # cụm cấp 1 trong Group cha (vd. từng tủ trong 1 bộ bếp) – chỉ để lọc, không tách model
+                (@cluster_names ||= {})[path] = name.to_s.empty? ? "Cụm #{(@cluster_names || {}).length + 1}" : name.to_s
+              end
               part = @door
               if part.nil? && info
                 role = PartClassifier.explicit(info, path, @roles, @door_tags)
@@ -388,6 +401,7 @@ module MTDesign
             st['defs_cached'] = @ex.defs_count
             classify_parts
             st['parts'] = @cap.parts.length
+            st['clusters'] = @cluster_names || {}
             st['doors'] = @cap.doors.length
             st['missing_roles'] = @roles.keys.reject { |pth| @seen_paths[pth] }
             st['extent'] = (0..2).map { |k| [@mins[k].round(1), @maxs[k].round(1)] } unless @cap.edges.empty?

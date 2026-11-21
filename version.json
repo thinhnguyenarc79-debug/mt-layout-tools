@@ -1,7 +1,7 @@
 {
-  "version": "2.7.1",
+  "version": "2.8.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "e3ebf876055856e0151e1ec510d3d8b72f7e668bf1a9c69523a5c0f231c2ce66",
-  "notes": "AUTO LAYOUT PRO v2.7.1: sửa lỗi 'uninitialized constant ...HiddenFill' (không dựng được hình chiếu) – file mới dùng cú pháp Ruby 3, SketchUp 2022 chạy Ruby 2.7; thêm test chặn cú pháp Ruby 3"
+  "sha256": "df4e44ebf0954f51452b41098a3e6ed26f6964e0102f424c8de70960a2bb0575",
+  "notes": "AUTO LAYOUT PRO v2.8.0: sửa lỗi khóa vị trí bị mất khi chuyển tờ/model (lưu toạ độ mm tuyệt đối theo từng hình), giữ bản đang sửa khi đóng/mở cửa sổ; nhận diện cấu tạo tổng quát theo hình học cho mọi kiểu tủ/bếp (đề xuất + độ tin cậy, chỉ cánh đã xác nhận mới dùng cho DIM), nút QUÉT VÀ NHẬN DIỆN CẤU TẠO, tô sáng & xác nhận hàng loạt, lọc theo cụm tủ"
 }

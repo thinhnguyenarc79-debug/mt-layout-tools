@@ -147,14 +147,21 @@ module MTDesign
               !pick_scale(group, aw, ah).nil?
             end
           end
-          return [[views, want.positive? ? want : nil, nil]] if fits.call(views)
+          pinned = views.select { |v| v[:pin] }
+          if pinned.all? { |v| v[:pin][:sheet].to_i.zero? } && fits.call(views)
+            return [[views, want.positive? ? want : nil, nil]]
+          end
 
-          # first-fit: mỗi hình vào tờ đầu tiên còn chỗ (giữ thứ tự hình trong từng tờ) -> ít tờ trống
+          # Hình đặt tay (vị trí thủ công) ở lại đúng tờ đã đặt; các hình còn lại first-fit vào tờ đầu tiên còn chỗ.
           sheets = []
-          views.each do |v|
+          pinned.each { |v| (sheets[v[:pin][:sheet].to_i.clamp(0, 49)] ||= []) << v }
+          sheets = sheets.map { |g| g || [] }
+          (views - pinned).each do |v|
             target = sheets.find { |g| fits.call(g + [v]) }
             target ? target << v : sheets << [v]
           end
+          sheets.reject!(&:empty?)
+          sheets.map! { |g| g.sort_by { |v| views.index(v) } }
           sheets.map do |group|
             if fits.call(group)
               [group, want.positive? ? want : nil, nil]
@@ -267,9 +274,20 @@ module MTDesign
             slots << [iso, x0 + pl[:rows_w] + GAP, y0 + (pl[:h] + box_h(iso, s)) / 2 - M_BOTTOM]
           end
           offs = page['offsets'] || {}
-          slots.map do |v, x, base|
+          placed = slots.map do |v, x, base|
             bw, bh = box_w(v, s), box_h(v, s)
             bx, by = x, base + M_BOTTOM - bh
+            if v[:pin]
+              # Vị trí thủ công: toạ độ tuyệt đối (mm giấy) của góc trên-trái khung hình – KHÔNG tính lại, KHÔNG kẹp.
+              px = v[:pin][:x].to_f
+              py = v[:pin][:y].to_f
+              info['boxes'][v[:key]] = [px, py, bw, bh].map { |n| n.round(2) }
+              if px < area[0] - 0.5 || py < area[1] - 0.5 || px + bw > area[2] + 0.5 || py + bh > area[3] + 0.5
+                add_note(info, "#{v[:name]} (#{v[:position_locked] ? 'khóa vị trí' : 'đặt tay'}) tràn ra ngoài vùng vẽ – " \
+                               'giữ nguyên vị trí, hãy kéo lại hoặc đổi khổ giấy/tỉ lệ.')
+              end
+              next [v, px, py + bh - M_BOTTOM]
+            end
             dx, dy = Array(offs[v[:key]]).map(&:to_f)
             dx ||= 0.0
             dy ||= 0.0
@@ -279,6 +297,31 @@ module MTDesign
             info['offsets'][v[:key]] = [dx.round(2), dy.round(2)]
             info['boxes'][v[:key]] = [bx + dx, by + dy, bw, bh].map { |n| n.round(2) }
             [v, x + dx, base + dy]
+          end
+          report_overlaps(placed, info)
+          placed
+        end
+
+        def add_note(info, msg)
+          info['note'] = [info['note'], msg].compact.join(' | ')
+        end
+
+        # Hình tự động chồng lên hình đặt tay -> báo xung đột (không tự dời hình đặt tay).
+        def report_overlaps(placed, info)
+          boxes = info['boxes']
+          pins = placed.select { |v, _, _| v[:pin] }
+          return if pins.empty?
+
+          placed.each do |v, _, _|
+            next if v[:pin]
+
+            a = boxes[v[:key]]
+            pins.each do |p, _, _|
+              b = boxes[p[:key]]
+              next unless a && b && a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
+
+              add_note(info, "XUNG ĐỘT VỊ TRÍ: #{v[:name]} chồng lên #{p[:name]} (đặt tay) – kéo #{v[:name]} sang chỗ trống.")
+            end
           end
         end
 

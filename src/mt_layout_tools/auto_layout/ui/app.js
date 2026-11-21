@@ -208,8 +208,20 @@
   function tidyProps(k) {
     var p = page(), v = p && p.view_props && p.view_props[k];
     if (v && !v.scale_override) v.scale_locked = false;
-    if (v && !v.scale_override && !v.position_locked) delete p.view_props[k];
+    if (v && !v.scale_override && !v.position_locked && v.placement_mode !== 'manual') delete p.view_props[k];
   }
+  // Vị trí thủ công (mm giấy, góc trên-trái khung hình) – lưu trong dữ liệu dự án, không phải pixel màn hình.
+  function placeManual(k, x, y) {
+    var v = vprops(k, true), p = page();
+    v.placement_mode = 'manual'; v.x_mm = Math.round(x * 100) / 100; v.y_mm = Math.round(y * 100) / 100; v.sheet = S.sheet || 0;
+    if (p.offsets) delete p.offsets[k]; // bỏ kiểu dịch tương đối cũ
+  }
+  function placeAuto(k) {
+    var v = vprops(k), p = page();
+    if (v) { v.placement_mode = 'auto'; v.x_mm = v.y_mm = v.sheet = null; tidyProps(k); }
+    if (p.offsets) delete p.offsets[k];
+  }
+  function isManual(k) { var v = vprops(k); return !!(v && v.placement_mode === 'manual'); }
   function frameOf(k) { return S.info && S.info.frames && S.info.frames[k]; }
   function effScale(k) {
     var v = vprops(k), f = frameOf(k);
@@ -241,7 +253,10 @@
     msg(on ? viewName(k) + ': đã khóa tỉ lệ 1:' + v.scale_override + '.' : viewName(k) + ': đã mở khóa tỉ lệ (vẫn giữ 1:' + effScale(k) + ' cho tới khi đổi).', 'ok');
   }
   function lockPos(k, on) {
-    snapshot(); vprops(k, true).position_locked = !!on; tidyProps(k); changed(false); renderViewProps(); overlay();
+    snapshot();
+    var b = S.info && S.info.boxes && S.info.boxes[k];
+    if (on && !isManual(k) && b) placeManual(k, b[0], b[1]); // khóa = giữ đúng X/Y đang thấy
+    vprops(k, true).position_locked = !!on; tidyProps(k); changed(false); renderViewProps(); overlay();
     msg(viewName(k) + (on ? ': đã khóa vị trí.' : ': đã mở khóa vị trí.'), 'ok');
   }
   // Bố trí lại: hình chưa khóa vị trí về chỗ tự động; withScale -> hình chưa khóa tỉ lệ về tỉ lệ trang.
@@ -250,6 +265,7 @@
     snapshot();
     var vp = p.view_props || {};
     Object.keys(p.offsets || {}).forEach(function (k) { if (!(vp[k] && vp[k].position_locked)) delete p.offsets[k]; });
+    Object.keys(vp).forEach(function (k) { if (!vp[k].position_locked && vp[k].placement_mode === 'manual') placeAuto(k); });
     if (withScale) Object.keys(vp).forEach(function (k) { if (!vp[k].scale_locked) { vp[k].scale_override = null; tidyProps(k); } });
     changed(); requestRender(true);
     msg('Đã bố trí lại' + (withScale ? ' (hình đã khóa giữ nguyên tỉ lệ' : ' (') + ', hình khóa vị trí giữ chỗ).', 'ok');
@@ -267,7 +283,7 @@
       '<tr><td>Tỉ lệ đang in</td><td><b>1:' + eff + '</b>' + (lk ? ' 🔒' : '') + '</td></tr>' +
       '<tr><td>Vị trí trên giấy</td><td>' + b[0].toFixed(1) + ', ' + b[1].toFixed(1) + ' mm</td></tr>' +
       '<tr><td>Khung chiếm chỗ</td><td>' + b[2].toFixed(1) + ' × ' + b[3].toFixed(1) + ' mm</td></tr>' +
-      '<tr><td>Dịch so với tự động</td><td>' + off[0].toFixed(1) + ', ' + off[1].toFixed(1) + ' mm</td></tr>' +
+      '<tr><td>Cách đặt</td><td>' + (v.placement_mode === 'manual' ? 'Thủ công (tờ ' + ((v.sheet || 0) + 1) + ')' : 'Tự động' + (off[0] || off[1] ? ' + dịch ' + off[0].toFixed(1) + ', ' + off[1].toFixed(1) : '')) + (v.position_locked ? ' · 🔒' : '') + '</td></tr>' +
       '</table><label>Tỉ lệ riêng của hình</label><select id="vScale"' + (lk ? ' disabled title="Đang khóa tỉ lệ"' : '') + '>' +
       '<option value="0">' + esc(base) + '</option>' +
       list.map(function (n) { return '<option value="' + n + '"' + (v.scale_override === n ? ' selected' : '') + '>1:' + n + '</option>'; }).join('') +
@@ -281,7 +297,7 @@
     };
     $('vLock').onchange = function () { lockScale(k, this.checked); };
     $('vPos').onchange = function () { lockPos(k, this.checked); };
-    $('vReset').onclick = function () { snapshot(); delete page().offsets[k]; changed(); };
+    $('vReset').onclick = function () { snapshot(); placeAuto(k); changed(); };
     $('vRelayout').onclick = function () { relayout(true); };
   }
 
@@ -481,8 +497,9 @@
   }
   function partsView() {
     var p = page(), parts = (S.info && S.info.parts) || [], roles = (p && p.roles) || {};
-    var q = $('partSearch').value.trim().toLowerCase(), f = $('partFilter').value;
+    var q = $('partSearch').value.trim().toLowerCase(), f = $('partFilter').value, cl = $('partCluster').value;
     return parts.filter(function (pt) {
+      if (cl && pt.cluster !== cl) return false;
       var r = effRole(pt, roles), manual = !!roles[pt.path];
       if (f === 'sug' && (manual || pt.sure)) return false;
       if (f === 'manual' && !manual) return false;
@@ -495,7 +512,7 @@
     return '<div class="it' + (sel ? ' sel' : '') + '" data-path="' + esc(pt.path) + '" style="top:' + i * ROW_H + 'px">' +
       '<input type="checkbox" class="ck"' + (sel ? ' checked' : '') + '>' +
       '<span class="nm" title="' + esc(pt.name + ' · ' + (pt.size || []).join('×') + ' mm · ' + pt.source + ' · ' + pt.path) + '">' + esc(partLabel(pt)) + '</span>' +
-      '<span class="src' + (manual || pt.sure ? '' : ' sug') + '">' + (manual ? 'gán tay' : (pt.sure ? '✓' : 'đề xuất')) + '</span>' +
+      '<span class="src' + (manual || pt.sure ? '' : ' sug') + '">' + (manual ? 'gán tay' : (pt.sure ? '✓' : (pt.role === 'unknown' ? '?' : 'đề xuất ' + Math.round((pt.confidence || 0) * 100) + '%'))) + '</span>' +
       '<select class="role">' + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '"' + (k === r ? ' selected' : '') + '>' + ROLES[k] + '</option>'; }).join('') +
       (manual ? '<option value="">↺ bỏ gán tay</option>' : '') + '</select></div>';
   }
@@ -511,10 +528,21 @@
     if (S.partSelPage !== p.id) { S.partSel = {}; S.partSelPage = p.id; }
     if (!$('assignRole').options.length) {
       $('assignRole').innerHTML = roleOpts('door', false); $('bulkRole').innerHTML = roleOpts('door', false) + '<option value="">↺ Bỏ gán tay</option>';
-      $('partFilter').innerHTML = '<option value="">Tất cả loại</option><option value="unknown">Chỉ chưa xác định</option><option value="sug">Chỉ "đề xuất" chưa chắc</option><option value="manual">Chỉ gán tay</option>' +
+      $('partFilter').innerHTML = '<option value="">Tất cả loại</option><option value="sug">Chờ xác nhận (đề xuất)</option><option value="unknown">Chưa xác định</option><option value="manual">Chỉ gán tay</option>' +
         Object.keys(ROLES).filter(function (k) { return k !== 'unknown'; }).map(function (k) { return '<option value="' + k + '">Chỉ ' + ROLES[k] + '</option>'; }).join('');
     }
     var parts = (S.info && S.info.parts) || [], roles = p.roles || {}, cnt = {};
+    // cụm tủ (cấp 1 trong Group cha) – chỉ để lọc, không tách model
+    var cls = (S.info && S.info.clusters) || {}, ccount = {};
+    parts.forEach(function (pt) { ccount[pt.cluster] = (ccount[pt.cluster] || 0) + 1; });
+    var ckeys = Object.keys(ccount).filter(function (c) { return cls[c] && ccount[c] > 1; });
+    var csel = $('partCluster'), cv = csel.value;
+    csel.parentNode.parentNode.style.display = ckeys.length > 1 ? '' : 'none';
+    csel.innerHTML = '<option value="">Tất cả cụm tủ (' + ckeys.length + ')</option>' + ckeys.map(function (c) {
+      return '<option value="' + esc(c) + '"' + (c === cv ? ' selected' : '') + '>' + esc(cls[c]) + ' · ' + ccount[c] + ' bộ phận</option>';
+    }).join('');
+    if (cv && ckeys.indexOf(cv) < 0) csel.value = '';
+    renderScanSum(parts, roles);
     parts.forEach(function (pt) { var r = effRole(pt, roles); cnt[r] = (cnt[r] || 0) + 1; });
     var total = (S.info && S.info.parts_total) || parts.length;
     $('partModel').innerHTML = esc(p.name || 'Model') + ' <small>· ' + total + ' bộ phận' + (total > parts.length ? ' (hiện ' + parts.length + ')' : '') + '</small>';
@@ -543,6 +571,42 @@
     });
     updateSelN();
   }
+  // Tóm tắt nhận diện: cánh chắc chắn / đề xuất / chưa xác định + thao tác hàng loạt
+  function sugDoors(parts, roles) {
+    return parts.filter(function (pt) { return !roles[pt.path] && !pt.sure && pt.role === 'door'; });
+  }
+  function renderScanSum(parts, roles) {
+    var box = $('scanSum'); if (!parts.length) { box.innerHTML = ''; return; }
+    var sure = parts.filter(function (pt) { return effRole(pt, roles) === 'door' && (roles[pt.path] || pt.sure); }).length;
+    var sug = sugDoors(parts, roles).length;
+    var sugAll = parts.filter(function (pt) { return !roles[pt.path] && !pt.sure && pt.role !== 'unknown'; }).length;
+    var unk = parts.filter(function (pt) { return effRole(pt, roles) === 'unknown'; }).length;
+    box.innerHTML =
+      '<div class="r ok"><b>' + sure + '</b><span class="lb">cánh chắc chắn (dùng cho DIM & tháo cánh)</span></div>' +
+      '<div class="r sug"><b>' + sug + '</b><span class="lb">cánh đề xuất – chờ xác nhận</span>' +
+      (sug ? '<button data-a="hlsug">Tô sáng</button><button data-a="oksug" class="gold">Xác nhận ' + sug + '</button>' : '') + '</div>' +
+      (sugAll > sug ? '<div class="r sug"><b>' + (sugAll - sug) + '</b><span class="lb">bộ phận khác đề xuất</span><button data-a="okall">Xác nhận tất cả</button></div>' : '') +
+      '<div class="r unk"><b>' + unk + '</b><span class="lb">chưa xác định</span>' + (unk ? '<button data-a="hlunk">Tô sáng</button>' : '') + '</div>';
+  }
+  $('scanSum').addEventListener('click', function (e) {
+    var a = e.target.dataset && e.target.dataset.a; if (!a) return;
+    var p = page(), parts = (S.info && S.info.parts) || [], roles = (p && p.roles) || {};
+    if (a === 'hlsug') call('highlight_parts', { pid: p.pid, paths: sugDoors(parts, roles).map(function (pt) { return pt.path; }), label: 'cánh đề xuất' });
+    if (a === 'hlunk') call('highlight_parts', { pid: p.pid, paths: parts.filter(function (pt) { return effRole(pt, roles) === 'unknown'; }).map(function (pt) { return pt.path; }), label: 'chưa xác định' });
+    if (a === 'oksug') setRoles(sugDoors(parts, roles).map(function (pt) { return pt.path; }), 'door', 'Đã xác nhận ' + sugDoors(parts, roles).length + ' cánh');
+    if (a === 'okall') {
+      var list = parts.filter(function (pt) { return !roles[pt.path] && !pt.sure && pt.role !== 'unknown'; });
+      var pp = page(); snapshot(); pp.roles = pp.roles || {};
+      list.forEach(function (pt) { pp.roles[pt.path] = pt.role; });
+      changed(); requestRender(true); msg('Đã xác nhận ' + list.length + ' bộ phận đề xuất. ↶ để hoàn tác.', 'ok');
+    }
+  });
+  $('scanParts').onclick = function () {
+    var p = page(); if (!p) { msg('Chưa có trang – bấm Tự động triển khai trước.', 'warn'); return; }
+    busy(true); call('scan_parts', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 });
+    msg('Đang đọc lại hình học và nhận diện cấu tạo…', 'ok');
+  };
+  $('partCluster').onchange = renderParts;
   function updateSelN() {
     var n = Object.keys(S.partSel).length;
     $('partSelN').textContent = n + ' đã tick'; $('bulkBtn').disabled = !n;
@@ -625,7 +689,7 @@
     if (!e.target.classList.contains('del')) return;
     var p = page(), i = +e.target.closest('.sec').dataset.i, sc = p.sections[i];
     if (!window.confirm('Xoá đường cắt ' + sc.label + '-' + sc.label + ' và bản vẽ MẶT CẮT ' + sc.label + '-' + sc.label + ' liên kết?')) return;
-    snapshot(); p.sections.splice(i, 1); if (p.offsets) delete p.offsets['sec:' + sc.label];
+    snapshot(); p.sections.splice(i, 1); if (p.offsets) delete p.offsets['sec:' + sc.label]; if (p.view_props) delete p.view_props['sec:' + sc.label];
     renderSections(); changed();
   });
   $('secAdd').onclick = function () {
@@ -640,7 +704,7 @@
   $('secAuto').onclick = function () {
     var p = page(); if (!p) return;
     if (p.sections && p.sections.length && !window.confirm('Thay các mặt cắt hiện có bằng vị trí plugin đề xuất?')) return;
-    snapshot(); (p.sections || []).forEach(function (x) { if (p.offsets) delete p.offsets['sec:' + x.label]; });
+    snapshot(); (p.sections || []).forEach(function (x) { if (p.offsets) delete p.offsets['sec:' + x.label]; if (p.view_props) delete p.view_props['sec:' + x.label]; });
     p.sections = null; renderSections(); changed();
   };
 
@@ -737,7 +801,7 @@
     if (!e.target.classList.contains('del')) return;
     var p = page(), i = +e.target.closest('.sec').dataset.i, d = p.details[i];
     if (!window.confirm('Xoá CHI TIẾT ' + d.n + '?')) return;
-    snapshot(); p.details.splice(i, 1); if (p.offsets) delete p.offsets['det:' + d.n]; renderDetails(); changed();
+    snapshot(); p.details.splice(i, 1); if (p.offsets) delete p.offsets['det:' + d.n]; if (p.view_props) delete p.view_props['det:' + d.n]; renderDetails(); changed();
   });
   function addDetail(key, a, b) {
     var f = S.info && S.info.frames && S.info.frames[key]; if (!f) return;
@@ -786,7 +850,7 @@
     var paper = $('paper');
     paper.innerHTML = svg;
     var p = page();
-    if (p && info.offsets) p.offsets = info.offsets; // đồng bộ vị trí đã kẹp trong vùng vẽ
+    // KHÔNG ghi đè p.offsets từ kết quả dựng: kết quả chỉ chứa hình của tờ đang xem (lỗi cũ: chuyển tờ làm mất vị trí).
     if (p && info.sections && p.sections == null) p.sections = info.sections; // nhận vị trí cắt plugin đề xuất
     renderSections(); renderDetails(); renderDoors(); if (S.selNote) renderNotes();
     renderNav();
@@ -955,9 +1019,8 @@
     }
     if (d.mode === 'move' && (Math.abs(d.dx) > 0.3 || Math.abs(d.dy) > 0.3)) {
       snapshot();
-      var p = page(); p.offsets = p.offsets || {};
-      var o = p.offsets[S.sel] || [0, 0];
-      p.offsets[S.sel] = [o[0] + d.dx, o[1] + d.dy];
+      var b0 = S.info.boxes[S.sel];
+      if (b0) placeManual(S.sel, b0[0] + d.dx, b0[1] + d.dy);
       changed(); requestRender(true);
     }
   });
@@ -984,11 +1047,14 @@
     if (S.sel && /^Arrow/.test(e.key)) {
       e.preventDefault();
       if (posLocked(S.sel)) { msg(viewName(S.sel) + ' đang khóa vị trí.', 'warn'); return; }
+      var bk = S.info && S.info.boxes[S.sel]; if (!bk) return;
       snapshot();
-      var st = e.shiftKey ? 10 : 1, p = page(), o = p.offsets[S.sel] || [0, 0];
+      var st = e.shiftKey ? 10 : 1;
       var dx = e.key === 'ArrowLeft' ? -st : e.key === 'ArrowRight' ? st : 0;
       var dy = e.key === 'ArrowUp' ? -st : e.key === 'ArrowDown' ? st : 0;
-      p.offsets[S.sel] = [o[0] + dx, o[1] + dy]; changed();
+      var v0 = vprops(S.sel);
+      placeManual(S.sel, (isManual(S.sel) ? v0.x_mm : bk[0]) + dx, (isManual(S.sel) ? v0.y_mm : bk[1]) + dy);
+      S.info.boxes[S.sel] = [bk[0] + dx, bk[1] + dy, bk[2], bk[3]]; changed();
     }
   });
   document.addEventListener('keyup', function (e) {

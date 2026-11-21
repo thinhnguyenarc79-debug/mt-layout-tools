@@ -153,3 +153,10 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 .pgrp .vl .it .src { font-size: 9px; color: #8a8f8b; flex: none; }
 .pgrp .vl .it .src.sug { color: #c0772b; }
 .pgrp .vl .it select { width: 96px; padding: 1px; font-size: 11px; flex: none; }
+
+.scansum { font-size: 11px; margin: 4px 0; }
+.scansum .r { display: flex; align-items: center; gap: 5px; margin: 2px 0; }
+.scansum .r b { min-width: 26px; text-align: right; }
+.scansum .r .lb { flex: 1; }
+.scansum button { padding: 1px 6px; font-size: 10px; }
+.scansum .ok { color: #2e7d4f; } .scansum .sug { color: #c0772b; } .scansum .unk { color: #b3261e; }

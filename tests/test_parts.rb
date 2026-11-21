@@ -105,7 +105,8 @@ class TestPartRecognition < Minitest::Test
     hong = by(cap, 'side')
     assert_equal 2, hong.length
     hau = by(cap, 'back')[0]
-    assert_match(/mặt sau/, hau['source'])
+    assert_match(/thân tủ/, hau['source'])
+    refute hau['sure']
   end
 
   def test_gan_tay_uu_tien_va_dung_chung_definition
@@ -118,12 +119,15 @@ class TestPartRecognition < Minitest::Test
     assert p['sure']
     assert_equal 'gán tay', p['source']
     left = cap2.parts.find { |x| x['path'] == parts[0].persistent_id.to_s }
-    assert_equal 'side', left['role'], 'bản sao cùng definition không bị gán theo'
+    refute_equal 'door', left['role'], 'bản sao cùng definition không bị gán theo'
+    refute left['sure']
     assert_empty cap2.stats['missing_roles']
     # đặt lại về chưa xác định -> không tự đoán lại
     cap3, = PX.cabinet({ roles: { parts[6].persistent_id.to_s => 'unknown' } }, built)
     assert_equal 'unknown', cap3.parts.find { |x| x['path'] == parts[6].persistent_id.to_s }['role']
-    assert_equal 1, cap3.doors.length
+    other = cap3.parts.find { |x| x['path'] == parts[7].persistent_id.to_s }
+    assert_equal ['door', false], [other['role'], other['sure']], 'cánh còn lại vẫn là đề xuất'
+    assert_empty cap3.doors, 'đề xuất chưa xác nhận không dùng để bỏ cánh'
   end
 
   def test_phat_hien_gan_tay_da_mat
@@ -155,7 +159,12 @@ end
 
 class TestPartDims < Minitest::Test
   def test_thao_canh_do_theo_bo_phan
-    cap, = PX.cabinet
+    built = PX.build
+    cap0, = PX.cabinet({}, built)
+    assert_empty cap0.doors, 'cánh chỉ là đề xuất -> chưa bỏ cánh / chưa DIM cánh'
+    doors = built[1][6, 2].map { |x| x.persistent_id.to_s }
+    cap, = PX.cabinet({ roles: doors.to_h { |d| [d, 'door'] } }, built) # người dùng xác nhận
+    assert_equal 2, cap.doors.length
     env = TestDoorPages::Env.new(cap)
     project = AL::ProjectStore.default_project
     pg = AL::ProjectStore.clean_page(project['defaults'].merge('pid' => 1, 'sheet_no' => 'A-01', 'views' => %w[front open], 'sections' => []))

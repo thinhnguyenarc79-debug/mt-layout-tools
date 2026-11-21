@@ -7,6 +7,7 @@ require_relative 'core/job'
 require_relative 'core/geometry'
 require_relative 'core/hidden_fill'
 require_relative 'core/part_classifier'
+require_relative 'core/cabinet_recognizer'
 require_relative 'core/extractor'
 require_relative 'core/canvas'
 require_relative 'core/dimension_engine'
@@ -48,7 +49,8 @@ module MTDesign
             'refresh' => :on_refresh, 'save' => :on_save, 'export_pdf' => :on_export_pdf,
             'export_svg' => :on_export_svg, 'save_json' => :on_save_json, 'open_json' => :on_open_json,
             'pick' => :on_pick, 'cancel' => :on_cancel, 'pick_doors' => :on_pick_doors,
-            'assign_parts' => :on_assign_parts, 'highlight_part' => :on_highlight_part
+            'assign_parts' => :on_assign_parts, 'highlight_parts' => :on_highlight_parts, 'scan_parts' => :on_scan_parts,
+            'highlight_part' => :on_highlight_part
           }.each do |name, handler|
             d.add_action_callback(name) do |_ctx, arg|
               guard(d, name) { send(handler, d, arg) }
@@ -101,8 +103,19 @@ module MTDesign
           out
         end
 
+        # Bản dự án đang biên tập (chưa bấm Lưu) giữ trong bộ nhớ theo từng file SKP: đóng/mở lại cửa sổ
+        # plugin không mất vị trí/khóa vừa chỉnh. Không ghi vào file SKP cho tới khi người dùng bấm 💾 Lưu.
+        def session_key
+          m = model
+          m.respond_to?(:guid) ? m.guid.to_s : m.object_id.to_s
+        end
+
+        def remember(project)
+          (@session ||= {})[session_key] = project
+        end
+
         def on_ready(d, _arg)
-          project = ProjectStore.load(model)
+          project = (@session ||= {})[session_key] || ProjectStore.load(model)
           sel = selection_payload(project)
           push(d, 'init', { 'project' => project, 'models' => sel['models'], 'notice' => sel['notice'], 'status' => sel['status'],
                             'tags' => sel['tags'], 'views' => Geometry::VIEWS.transform_values(&:first),
@@ -224,6 +237,7 @@ module MTDesign
         def on_render(d, arg)
           data = parse(arg)
           project = ProjectStore.clean(data['project'])
+          remember(project)
           page = project['pages'].find { |p| p['id'] == data['page_id'] }
           raise ArgumentError, 'Không tìm thấy trang.' unless page
 
@@ -249,6 +263,7 @@ module MTDesign
 
         def on_save(d, arg)
           project = ProjectStore.clean(parse(arg))
+          remember(project)
           ProjectStore.save(model, project)
           push(d, 'saved', { 'message' => 'Đã lưu dự án vào file SketchUp (nhấn Ctrl+S trong SketchUp để ghi file SKP).' })
         end
@@ -389,6 +404,83 @@ module MTDesign
           model.selection.add(target)
           model.active_view.zoom(target)
           push(d, 'saved', { 'message' => "Đang chọn trong SketchUp: #{Geometry.instance_name(target)}" })
+        end
+
+        # Tô sáng NHIỀU bộ phận (vd. các cánh đề xuất) bằng khung màu vẽ tạm trên màn hình – không đổi vật liệu,
+        # Tag hay hình học của model. Bấm Esc hoặc chọn công cụ khác để tắt.
+        def on_highlight_parts(d, arg)
+          data = parse(arg)
+          root = ModelScanner.find(model, data['pid'])
+          raise ArgumentError, 'Không tìm thấy Group tủ.' unless root
+
+          ap = Array(model.active_path)
+          if ap.include?(root)
+            k = ap.index(root)
+            model.active_path = k.zero? ? nil : ap[0...k]
+          end
+          base = Geometry.world_transform(model, root)
+          boxes = []
+          missing = 0
+          Array(data['paths']).first(3000).each do |pth|
+            chain = pth.to_s.split('/').map { |x| model.find_entity_by_persistent_id(x.to_i) }
+            if chain.empty? || chain.any?(&:nil?)
+              missing += 1
+              next
+            end
+            tr = chain.inject(base) { |m, e| m * e.transformation }
+            bb = chain.last.definition.bounds
+            boxes << (0..7).map { |i| bb.corner(i).transform(tr) }
+          end
+          raise ArgumentError, 'Không còn bộ phận nào trong model để tô sáng.' if boxes.empty?
+
+          model.select_tool(HighlightTool.new(boxes, data['label'].to_s))
+          msg = "Đang tô sáng #{boxes.length} bộ phận (khung cam) – bấm Esc để tắt."
+          msg += " #{missing} bộ phận không còn trong model." if missing.positive?
+          push(d, 'saved', { 'message' => msg })
+        end
+
+        # QUÉT VÀ NHẬN DIỆN CẤU TẠO: đọc lại hình học từ SketchUp và chạy nhận diện cho trang đang mở.
+        def on_scan_parts(d, arg)
+          on_refresh(d, arg)
+        end
+
+        # Công cụ vẽ tạm (không sửa model)
+        class HighlightTool
+          EDGES = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]].freeze
+
+          def initialize(boxes, label)
+            @boxes = boxes
+            @label = label
+          end
+
+          def activate
+            bb = Geom::BoundingBox.new
+            @boxes.each { |c| c.each { |p| bb.add(p) } }
+            @bb = bb
+            Sketchup.active_model.active_view.invalidate
+            Sketchup.status_text = "AUTO LAYOUT PRO: #{@label} #{@boxes.length} bộ phận – Esc để tắt"
+          end
+
+          def deactivate(view)
+            view.invalidate
+          end
+
+          def getExtents
+            @bb
+          end
+
+          def onKeyDown(key, _r, _f, _view)
+            Sketchup.active_model.select_tool(nil) if key == 27
+            false
+          end
+
+          def draw(view)
+            view.line_width = 3
+            view.drawing_color = Sketchup::Color.new(255, 140, 0)
+            pts = []
+            @boxes.each { |c| EDGES.each { |a, b| pts << c[a] << c[b] } }
+            view.draw(GL_LINES, pts) unless pts.empty?
+          end
         end
 
         def folder

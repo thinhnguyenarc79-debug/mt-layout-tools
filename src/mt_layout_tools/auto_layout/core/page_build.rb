@@ -125,6 +125,7 @@ module MTDesign
           @extent = cap.stats['extent']
           @doors = Array(cap.doors)
           @parts = Array(cap.parts)
+          @clusters = (cap.stats || {})['clusters'] || {}
           @missing = Array(cap.stats['missing_roles'])
           unless @missing.empty?
             @notes << "#{@missing.length} bộ phận đã gán tay không còn trong model (đã xoá hoặc thay thế) – xem mục CẤU TẠO TỦ."
@@ -365,6 +366,7 @@ module MTDesign
             v[:fixed_scale] = (vp && vp['scale_override']) || v[:own_scale]
             v[:scale_locked] = vp ? vp['scale_locked'] == true : false
             v[:position_locked] = vp ? vp['position_locked'] == true : false
+            v[:pin] = vp && vp['placement_mode'] == 'manual' ? { x: vp['x_mm'], y: vp['y_mm'], sheet: vp['sheet'].to_i } : nil
           end
         end
 
@@ -406,8 +408,10 @@ module MTDesign
             info['doors'] = Array(@doors).map { |d| { 'name' => d['name'], 'reason' => d['reason'], 'path' => d['path'], 'sure' => d['sure'] } }
             info['parts'] = Array(@parts).first(5000).map do |pt|
               { 'path' => pt['path'], 'name' => pt['name'], 'role' => pt['role'], 'source' => pt['source'], 'sure' => pt['sure'],
+                'confidence' => pt['confidence'], 'cluster' => pt['path'].to_s.split('/').first,
                 'size' => pt['bounds'].map { |lo, hi| (hi - lo).round } }
             end
+            info['clusters'] = @clusters || {}
             info['parts_total'] = Array(@parts).length
             info['missing_roles'] = Array(@missing)
             info['door_items'] = group.select { |v| v[:door_items] }.map { |v| [v[:key], v[:door_items]] }.to_h

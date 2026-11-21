@@ -105,8 +105,8 @@ class TestViewScale < Minitest::Test
     project, pg = VS.page('scale' => 40, 'view_props' => VS::LOCK15.merge('top' => { 'position_locked' => true }),
                           'offsets' => { 'top' => [5, 3] })
     again = AL::ProjectStore.clean_page(JSON.parse(JSON.generate(pg)))
-    assert_equal({ 'scale_override' => 15, 'scale_locked' => true, 'position_locked' => false }, again['view_props']['front'])
-    assert_equal({ 'scale_override' => nil, 'scale_locked' => false, 'position_locked' => true }, again['view_props']['top'])
+    assert_equal({ 'scale_override' => 15, 'scale_locked' => true, 'position_locked' => false, 'placement_mode' => 'auto', 'x_mm' => nil, 'y_mm' => nil, 'sheet' => nil }, again['view_props']['front'])
+    assert_equal({ 'scale_override' => nil, 'scale_locked' => false, 'position_locked' => true, 'placement_mode' => 'auto', 'x_mm' => nil, 'y_mm' => nil, 'sheet' => nil }, again['view_props']['top'])
     # dựng lại trang (Tạo trang, thay thế): khóa không tự mất
     finder = ->(_pid) { { 'name' => 'Tủ', 'root' => true } }
     AL::ProjectStore.add_pages(project, [1], finder, true)
