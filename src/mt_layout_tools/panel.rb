@@ -35,7 +35,7 @@ module MTDesign
             scrollable:      false,
             resizable:       true,
             width:           300,
-            height:          260,
+            height:          300,
             style:           UI::HtmlDialog::STYLE_UTILITY
           )
           d.set_file(HTML_FILE)
@@ -46,6 +46,7 @@ module MTDesign
             set_status('Đang kiểm tra cập nhật...')
             Updater.check(silent: false)
           end
+          d.add_action_callback('matbang') { |_ctx| MatBang.show }
           d.add_action_callback('about') { |_ctx| LayoutTools.show_about }
           d
         end

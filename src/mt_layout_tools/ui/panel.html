@@ -13,6 +13,8 @@
            font: 600 13px "Segoe UI", Arial, sans-serif; cursor: pointer; }
   .primary { background: #C9A45C; color: #1f2a24; }
   .primary:hover { background: #b8934c; }
+  .main { background: #2F4A3A; color: #fff; padding: 12px; }
+  .main:hover { background: #24392d; }
   .ghost { background: #e4e2d9; color: #1f2a24; }
   .ghost:hover { background: #d6d3c8; }
   #status { min-height: 18px; font-size: 12px; color: #5b6660; }
@@ -24,6 +26,7 @@
     <small>Phiên bản <span id="ver">-</span></small>
   </header>
   <main>
+    <button class="main" onclick="sketchup.matbang()">Dàn trang – MT Mặt Bằng</button>
     <button class="primary" onclick="sketchup.update()">Cập nhật</button>
     <button class="ghost" onclick="sketchup.about()">Thông tin phiên bản</button>
     <div id="status"></div>

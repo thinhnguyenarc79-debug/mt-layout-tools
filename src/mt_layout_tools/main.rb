@@ -7,6 +7,7 @@ module MTDesign
     require File.join(PLUGIN_DIR, 'version')
     require File.join(PLUGIN_DIR, 'updater')
     require File.join(PLUGIN_DIR, 'panel')
+    require File.join(PLUGIN_DIR, 'mat_bang', 'main')
 
     def self.icon(name)
       File.join(PLUGIN_DIR, 'icons', "#{name}.svg")
@@ -24,6 +25,9 @@ module MTDesign
       cmd_panel.small_icon      = icon('mt_layout')
       cmd_panel.large_icon      = icon('mt_layout')
 
+      cmd_matbang = UI::Command.new('Dàn trang – MT Mặt Bằng') { MatBang.show }
+      cmd_matbang.status_bar_text = 'Vẽ mặt bằng, triển khai hình chiếu, xuất PDF/DXF.'
+
       cmd_update = UI::Command.new('Cập nhật') { Updater.check(silent: false) }
       cmd_update.status_bar_text = 'Kiểm tra và cài bản mới nhất từ GitHub.'
 
@@ -31,6 +35,7 @@ module MTDesign
 
       menu = UI.menu('Extensions').add_submenu('MT Layout Tools')
       menu.add_item(cmd_panel)
+      menu.add_item(cmd_matbang)
       menu.add_item(cmd_update)
       menu.add_separator
       menu.add_item(cmd_about)

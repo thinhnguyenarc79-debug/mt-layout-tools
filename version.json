@@ -1,6 +1,6 @@
 {
-  "version": "1.0.3",
+  "version": "1.1.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
-  "sha256": "646438c0db6b4bd693cd61eb63e0934a07be37b95aabc96d9a312986c5cc5188",
-  "notes": "Biểu tượng mới: tờ bản vẽ có 2 khung nhìn và khung tên MT."
+  "sha256": "2d3ff3db1a83df1eb29eb6520d31b38db533041d3a0b43bb470b26e9c6b79709",
+  "notes": "Tích hợp dàn trang MT Mặt Bằng vào bảng MT Layout Tools."
 }
