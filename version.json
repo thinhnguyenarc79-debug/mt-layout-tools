@@ -1,7 +1,7 @@
 {
-  "version": "2.0.2",
+  "version": "2.1.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "b2e5520502ecbfe6324ce4e2006686d0105d5fd773d06641e78b1d832b7b8b4b",
-  "notes": "Sửa lỗi Group cha/con: 1 Group cha = 1 model = 1 trang. Đánh dấu và dọn trang cũ của bộ phận con/đối tượng đã xoá (từ bản 2.0.0), không tạo trùng trang khi triển khai nhiều lần, có chế độ thay thế trang cũ."
+  "sha256": "1c143a79e89f73c53a43221793aec29baceb6c3af0f4c4c0dbdd119f04583b04",
+  "notes": "Sửa trang trắng với Group nhiều chi tiết: bỏ giới hạn 6000 cạnh; đọc hình học theo ComponentDefinition (cache) + ma trận tích luỹ; khử nét khuất dùng lưới không gian, 3 mức dự phòng; chạy chia lát có tiến trình và nút Huỷ; lỗi một hình chiếu không làm mất hình khác; log chẩn đoán."
 }

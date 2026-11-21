@@ -93,7 +93,7 @@ module MTDesign
         # views: mảng hình chiếu từ Geometry.project (đã gắn :key). mats: [{name,color}].
         # page: 'scale','fill','min_gap','round','offsets' {key=>[dx,dy]}, 'paper'. tb: thông tin khung tên.
         # Trả về info: scale, note, boxes {key=>[x,y,w,h]}, offsets (đã kẹp trong vùng vẽ).
-        def render(cv, views, mats, page, tb, pw, ph)
+        def render(cv, views, mats, page, tb, pw, ph, notes = [])
           frame, tb_x, area = frames(pw, ph)
           aw = area[2] - area[0]
           legend = mats.first(14)
@@ -103,6 +103,16 @@ module MTDesign
           if views.empty?
             info['scale'] = page['scale'].to_i.positive? ? page['scale'].to_i : 20
             info['note'] = 'Trang chưa có hình chiếu nào.'
+            # Không để trang trắng im lặng: in rõ lý do lên giấy.
+            msgs = ['CHƯA DỰNG ĐƯỢC HÌNH CHIẾU CHO TRANG NÀY'] + (notes.empty? ? ['Chưa chọn hình chiếu nào.'] : notes)
+            cx = (area[0] + area[2]) / 2
+            y = (area[1] + area[3]) / 2 - msgs.length * 3
+            msgs.each_with_index do |m, i|
+              cv.wrap(m, i.zero? ? 4.0 : 2.6, aw - 20).each do |ln|
+                cv.text(ln, cx, y, i.zero? ? 4.0 : 2.6, 0, i.zero? ? '#B3261E' : INK)
+                y += i.zero? ? 7 : 4
+              end
+            end
           else
             auto = pick_scale(views, aw, ah)
             want = page['scale'].to_i
@@ -173,9 +183,65 @@ module MTDesign
           oy = base - vh
           tf = ->(p) { [ox + p[0] / s, oy + p[1] / s] }
           v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
-          v[:lines].each { |a, b| cv.line(tf.call(a), tf.call(b), 0.25, INK) }
+          chain(v[:lines].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.25, INK) }
           DimensionEngine.draw(cv, v, s, ox, oy, page) if v[:dims] && page.fetch('dims', true)
           caption(cv, v[:name], "TL 1:#{s}", ox + vw / 2, base + 6.5)
+          return unless v[:level].to_i >= 3
+
+          cv.text('BẢN XEM TRƯỚC – CHƯA KHỬ ĐỦ NÉT KHUẤT', ox + vw / 2, base + 13.5, 2.2, 0, '#B3261E')
+        end
+
+        # Nối các đoạn chung đầu mút thành đường gấp khúc rồi rút gọn điểm (sai lệch < 0,02 mm trên giấy).
+        # Giữ nguyên hình dạng in ra, nhưng file SVG/PDF nhẹ hơn nhiều với cung tròn chia mịn.
+        def chain(segs, tol = 0.02)
+          key = ->(p) { [(p[0] * 100).round, (p[1] * 100).round] }
+          ends = Hash.new { |h, k| h[k] = [] }
+          segs.each_with_index { |(a, b), i| ends[key.call(a)] << i; ends[key.call(b)] << i }
+          used = Array.new(segs.length, false)
+          out = []
+          segs.each_index do |i|
+            next if used[i]
+
+            used[i] = true
+            pts = segs[i].dup
+            [true, false].each do |forward|
+              loop do
+                tip = forward ? pts.last : pts.first
+                j = ends[key.call(tip)].find { |k| !used[k] }
+                break unless j
+
+                used[j] = true
+                a, b = segs[j]
+                nxt = key.call(a) == key.call(tip) ? b : a
+                forward ? pts.push(nxt) : pts.unshift(nxt)
+              end
+            end
+            out << simplify(pts, tol)
+          end
+          out
+        end
+
+        def simplify(pts, tol)
+          return pts if pts.length < 3
+
+          a = pts.first
+          b = pts.last
+          dx = b[0] - a[0]
+          dy = b[1] - a[1]
+          len = Math.hypot(dx, dy)
+          far = 0
+          dmax = -1.0
+          (1...pts.length - 1).each do |i|
+            p = pts[i]
+            d = len < 1e-9 ? Math.hypot(p[0] - a[0], p[1] - a[1]) : ((p[0] - a[0]) * dy - (p[1] - a[1]) * dx).abs / len
+            if d > dmax
+              dmax = d
+              far = i
+            end
+          end
+          return [a, b] if dmax <= tol
+
+          simplify(pts[0..far], tol)[0..-2] + simplify(pts[far..-1], tol)
         end
 
         def caption(cv, name, scale, cx, cy)

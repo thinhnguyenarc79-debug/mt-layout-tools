@@ -51,6 +51,18 @@ module MTDesign
           end
         end
 
+        # Đường gấp khúc mở (nhiều đoạn nối nhau) – gọn hơn nhiều so với từng đoạn riêng.
+        def polyline(points, w, color)
+          return if points.length < 2
+
+          if @fmt == :svg
+            @out << %(<path d="M#{points.map { |p| "#{n(p[0])} #{n(p[1])}" }.join('L')}" fill="none" stroke="#{color}" stroke-width="#{n(w)}"/>)
+          else
+            @out << "#{Pdf.number(w * K)} w #{rgb(color)} RG #{xy(points[0])} m " +
+                    points[1..-1].map { |p| "#{xy(p)} l" }.join(' ') + ' S'
+          end
+        end
+
         def poly(points, color)
           if @fmt == :svg
             @out << %(<path d="M#{points.map { |p| "#{n(p[0])} #{n(p[1])}" }.join('L')}Z" fill="#{color}" stroke="#{color}" stroke-width="0.08"/>)

@@ -3,7 +3,9 @@ require 'sketchup.rb'
 require 'json'
 require 'tmpdir'
 require_relative 'core/pdf'
+require_relative 'core/job'
 require_relative 'core/geometry'
+require_relative 'core/extractor'
 require_relative 'core/canvas'
 require_relative 'core/dimension_engine'
 require_relative 'core/sheet'
@@ -29,7 +31,7 @@ module MTDesign
             guard(@dialog, 'scan') { on_scan(@dialog, nil) } # bấm lại nút = lấy đối tượng vừa chọn
             return
           end
-          @cache = {}
+          reset_cache
           d = UI::HtmlDialog.new(dialog_title: 'AUTO LAYOUT PRO – MT Layout Tools', preferences_key: 'MTDesign_AutoLayout',
                                  width: 1400, height: 860, min_width: 1000, min_height: 620,
                                  resizable: true, scrollable: false, style: UI::HtmlDialog::STYLE_DIALOG)
@@ -38,13 +40,16 @@ module MTDesign
             'ready' => :on_ready, 'scan' => :on_scan, 'generate' => :on_generate, 'render' => :on_render,
             'refresh' => :on_refresh, 'save' => :on_save, 'export_pdf' => :on_export_pdf,
             'export_svg' => :on_export_svg, 'save_json' => :on_save_json, 'open_json' => :on_open_json,
-            'pick' => :on_pick
+            'pick' => :on_pick, 'cancel' => :on_cancel
           }.each do |name, handler|
             d.add_action_callback(name) do |_ctx, arg|
               guard(d, name) { send(handler, d, arg) }
             end
           end
-          d.set_on_closed { @cache = {} }
+          d.set_on_closed do
+            @job&.cancel!
+            reset_cache
+          end
           @dialog = d
           d.show
         end
@@ -56,6 +61,12 @@ module MTDesign
         rescue StandardError => e
           log("#{name}: #{e.class}: #{e.message}\n  #{e.backtrace.first(8).join("\n  ")}")
           push(d, 'error', { 'cmd' => name, 'message' => "Lỗi #{e.class}: #{e.message} (chi tiết: #{LOG})" })
+        end
+
+        def reset_cache
+          @caps = {}       # khoá (pid, hướng, tag loại) -> Capture
+          @views = {}      # khoá capture + hình chiếu -> hình chiếu đã khử nét
+          @extractor = Extractor.new
         end
 
         def push(d, kind, data)
@@ -121,6 +132,47 @@ module MTDesign
                                'status' => ModelScanner.statuses(model, project), 'message' => msg })
         end
 
+        # ---------------- tác vụ dài (chia lát, có tiến trình & huỷ) ----------------
+        # Chỉ 1 tác vụ chạy tại một thời điểm; tác vụ mới huỷ tác vụ cũ.
+        def start_job(d, name, &work)
+          @job&.cancel!
+          job = Job.new(name, &work)
+          @job = job
+          last = nil
+          job.run_async(
+            on_step: lambda do |j|
+              cur = [j.progress_text, j.progress_pct]
+              push(d, 'progress', { 'text' => cur[0], 'pct' => cur[1] }) if cur != last
+              last = cur
+            end,
+            on_done: lambda do |result|
+              @job = nil if @job.equal?(job)
+              push(d, 'progress', { 'done' => true })
+              result&.call
+            end,
+            on_error: lambda do |e|
+              @job = nil if @job.equal?(job)
+              push(d, 'progress', { 'done' => true })
+              if e.is_a?(Job::Cancelled)
+                push(d, 'saved', { 'message' => 'Đã huỷ tác vụ.' }) unless job.cancelled? && !@job.nil?
+              elsif e.is_a?(ArgumentError)
+                push(d, 'error', { 'cmd' => name, 'message' => e.message })
+              else
+                log("#{name}: #{e.class}: #{e.message}\n  #{Array(e.backtrace).first(12).join("\n  ")}")
+                push(d, 'error', { 'cmd' => name, 'message' => "Lỗi #{e.class}: #{e.message} (chi tiết: #{LOG})" })
+              end
+            end
+          )
+        end
+
+        def on_cancel(d, _arg)
+          if @job
+            @job.cancel!
+          else
+            push(d, 'progress', { 'done' => true })
+          end
+        end
+
         # Dựng 1 trang để xem/biên tập. arg: { project, page_id }.
         def on_render(d, arg)
           data = parse(arg)
@@ -128,14 +180,17 @@ module MTDesign
           page = project['pages'].find { |p| p['id'] == data['page_id'] }
           raise ArgumentError, 'Không tìm thấy trang.' unless page
 
-          t = Time.now
-          svg, info = page_output(project, page, :svg)
-          info['ms'] = ((Time.now - t) * 1000).round
-          push(d, 'page', { 'page_id' => page['id'], 'svg' => svg, 'info' => info })
+          start_job(d, 'render') do |job|
+            t = Time.now
+            svg, info = page_output(project, page, :svg, job)
+            info['ms'] = ((Time.now - t) * 1000).round
+            -> { push(d, 'page', { 'page_id' => page['id'], 'svg' => svg, 'info' => info }) }
+          end
         end
 
+        # "Cập nhật bản vẽ": đọc lại hình học từ SketchUp (bỏ cache) rồi dựng lại.
         def on_refresh(d, arg)
-          @cache = {}
+          reset_cache
           on_render(d, arg)
         end
 
@@ -153,22 +208,25 @@ module MTDesign
           raise ArgumentError, 'Không có trang nào để xuất.' if pages.empty?
 
           pw, ph = Sheet.paper(project['paper'])
-          contents = []
-          notes = []
-          pages.each_with_index do |pg, i|
-            Sketchup.status_text = "AUTO LAYOUT PRO: dựng trang #{i + 1}/#{pages.length}..."
-            content, info = page_output(project, pg, :pdf)
-            contents << content
-            notes << "#{pg['sheet_no']}: #{info['note']}" if info['note']
+          start_job(d, 'export_pdf') do |job|
+            contents = []
+            notes = []
+            pages.each_with_index do |pg, i|
+              job.progress("Xuất PDF: trang #{i + 1}/#{pages.length} (#{pg['sheet_no']})", 100.0 * i / pages.length)
+              content, info = page_output(project, pg, :pdf, job)
+              contents << content
+              notes << "#{pg['sheet_no']}: #{info['note']}" if info['note']
+            end
+            bytes = Pdf.pdf_pages(contents, [pw * Pdf::MM_TO_PT, ph * Pdf::MM_TO_PT])
+            lambda do
+              name = pages.length == 1 ? "#{pages[0]['sheet_no']} #{pages[0]['name']}" : project['name']
+              path = save_file(name, 'pdf', bytes)
+              msg = path ? "Đã xuất #{pages.length} trang: #{File.basename(path)}" : 'Đã huỷ lưu.'
+              msg += " Lưu ý – #{notes.join(' | ')}" unless notes.empty?
+              push(d, notes.empty? ? 'saved' : 'warn', { 'message' => msg })
+              UI.openURL("file:///#{path.tr('\\', '/')}") if path
+            end
           end
-          Sketchup.status_text = ''
-          bytes = Pdf.pdf_pages(contents, [pw * Pdf::MM_TO_PT, ph * Pdf::MM_TO_PT])
-          name = pages.length == 1 ? "#{pages[0]['sheet_no']} #{pages[0]['name']}" : project['name']
-          path = save_file(name, 'pdf', bytes)
-          msg = path ? "Đã xuất #{pages.length} trang: #{File.basename(path)}" : 'Đã huỷ.'
-          msg += " Lưu ý – #{notes.join('; ')}" unless notes.empty?
-          push(d, 'saved', { 'message' => msg })
-          UI.openURL("file:///#{path.tr('\\', '/')}") if path
         end
 
         def on_export_svg(d, arg)
@@ -177,9 +235,13 @@ module MTDesign
           page = project['pages'].find { |p| p['id'] == data['page_id'] }
           raise ArgumentError, 'Không tìm thấy trang.' unless page
 
-          svg, = page_output(project, page, :svg)
-          path = save_file("#{page['sheet_no']} #{page['name']}", 'svg', svg)
-          push(d, 'saved', { 'message' => path ? "Đã xuất #{File.basename(path)}" : 'Đã huỷ.' })
+          start_job(d, 'export_svg') do |job|
+            svg, = page_output(project, page, :svg, job)
+            lambda do
+              path = save_file("#{page['sheet_no']} #{page['name']}", 'svg', svg)
+              push(d, 'saved', { 'message' => path ? "Đã xuất #{File.basename(path)}" : 'Đã huỷ lưu.' })
+            end
+          end
         end
 
         def on_save_json(d, arg)
@@ -209,44 +271,88 @@ module MTDesign
         end
 
         # ---------------- dựng trang ----------------
-        def capture_for(pg, project, extra = [])
+        def capture_for(pg, project, job, extra = [])
           e = ModelScanner.find(model, pg['pid'])
           raise ArgumentError, "Trang #{pg['sheet_no']}: đối tượng gốc đã bị xoá hoặc thay thế trong SketchUp." unless e
 
           exclude = (project['exclude_tags'] + extra).uniq
           key = [pg['pid'], pg['front'], exclude.sort].to_json
-          @cache ||= {}
-          @cache[key] ||= Geometry.capture(model, e, exclude, pg['front'])
+          @caps ||= {}
+          @extractor ||= Extractor.new
+          return [@caps[key], key] if @caps[key]
+
+          cap = @extractor.capture(model, e, exclude, pg['front'], job)
+          st = cap.stats
+          log("CAPTURE pid=#{pg['pid']} '#{cap.name}' front=#{pg['front']} exclude=#{exclude.inspect}: " \
+              "group con=#{st['groups']} component con=#{st['components']} face=#{st['faces']} " \
+              "cạnh nguồn=#{st['edges_src']} -> cạnh=#{st['edges']} tam giác=#{st['triangles']} " \
+              "definition đã cache=#{st['defs_cached']} thời gian=#{st['seconds']}s; nặng nhất: #{st['heaviest'].join('; ')}")
+          @caps[key] = cap
+          [cap, key]
         end
 
-        def page_output(project, pg, fmt)
+        # Dựng 1 hình chiếu; lỗi của hình này không ảnh hưởng hình khác.
+        def view_for(cap, cap_key, k, job)
+          @views ||= {}
+          vkey = "#{cap_key}|#{k}"
+          return @views[vkey] if @views[vkey]
+
+          v = Geometry.project(cap, k, job)
+          st = v[:stats]
+          log("VIEW #{k} '#{cap.name}': tam giác=#{st['tris']} cạnh vào=#{st['edges_in']} cạnh sau lọc trùng=#{st['edges']} " \
+              "nét ra=#{st['lines']} mức=#{st['level']} thời gian=#{st['seconds']}s#{v[:notes].empty? ? '' : ' | ' + v[:notes].join(' | ')}")
+          @views[vkey] = v
+        end
+
+        def page_output(project, pg, fmt, job)
           pw, ph = Sheet.paper(project['paper'])
           cv = Canvas.new(fmt, pw, ph)
           tb = project['tb'].merge('sheet_name' => pg['name'], 'sheet_no' => pg['sheet_no'])
+          notes = []
+          failed = []
+          views = []
+          mats = []
           begin
             if ModelScanner.page_status(model, pg) == 'nested'
               raise ArgumentError, "Trang #{pg['sheet_no']} là bộ phận nằm bên trong một Group khác (trang cũ từ bản 2.0.0). " \
                                    'Bấm "🧹 Dọn trang lỗi" để xoá, rồi triển khai Group cha.'
             end
-            cap = capture_for(pg, project)
-            views = pg['views'].map do |k|
-              if k == 'open'
-                door = project['door_tag'].to_s
-                next nil if door.empty?
-
-                Geometry.project(capture_for(pg, project, [door]), k)
-              else
-                Geometry.project(cap, k)
+            cap, ckey = capture_for(pg, project, job)
+            mats = cap.materials.values
+            pg['views'].each do |k|
+              job.progress("#{pg['sheet_no']}: dựng #{Geometry::VIEWS[k][0].downcase}", nil)
+              begin
+                if k == 'open'
+                  door = project['door_tag'].to_s
+                  if door.empty?
+                    notes << 'Chưa chọn Tag cánh nên bỏ qua "Mặt đứng tháo cánh".'
+                    next
+                  end
+                  c2, k2 = capture_for(pg, project, job, [door])
+                  views << view_for(c2, k2, k, job)
+                else
+                  views << view_for(cap, ckey, k, job)
+                end
+                notes.concat(views.last[:notes])
+              rescue Job::Cancelled
+                raise
+              rescue StandardError => e
+                failed << k
+                notes << "#{Geometry::VIEWS[k][0]}: lỗi – #{e.message}"
+                log("VIEW #{k} THẤT BẠI pid=#{pg['pid']}: #{e.class}: #{e.message}\n  #{Array(e.backtrace).first(10).join("\n  ")}")
               end
-            end.compact
-            info = Sheet.render(cv, views, cap.materials.values, pg, tb, pw, ph)
-            if pg['views'].include?('open') && project['door_tag'].to_s.empty?
-              info['note'] = [info['note'], 'Chưa chọn Tag cánh nên bỏ qua "Mặt đứng tháo cánh".'].compact.join(' ')
             end
+          rescue Job::Cancelled
+            raise
           rescue ArgumentError => e
-            info = Sheet.render(cv, [], [], pg, tb, pw, ph)
-            info['note'] = e.message
+            notes << e.message
+            log("PAGE #{pg['sheet_no']} pid=#{pg['pid']}: #{e.message}")
           end
+          info = Sheet.render(cv, views, mats, pg, tb, pw, ph, notes)
+          info['note'] = notes.empty? ? info['note'] : [info['note'], *notes].compact.uniq.join(' ')
+          info['failed'] = failed
+          info['complete'] = !views.empty? && failed.empty? && views.all? { |v| v[:level] == 1 }
+          info['levels'] = views.map { |v| [v[:key], v[:level]] }.to_h
           [fmt == :svg ? cv.svg : cv.content, info]
         end
 

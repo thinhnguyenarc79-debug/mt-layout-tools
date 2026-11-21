@@ -37,6 +37,12 @@
         busy(false);
         if (d.page_id !== S.cur) return;
         showSvg(d.svg, d.info);
+      } else if (kind === 'progress') {
+        if (d.done) { busy(false); return; }
+        busy(true); $('busyText').textContent = d.text || 'Đang xử lý…';
+        $('busyPct').textContent = d.pct ? d.pct + '%' : ''; $('busyBar').style.width = (d.pct || 0) + '%';
+      } else if (kind === 'warn') {
+        msg(d.message, 'warn');
       } else if (kind === 'saved') {
         msg(d.message, 'ok');
         if (/dự án/.test(d.message)) S.dirty = false;
@@ -48,7 +54,11 @@
 
   // ---------------- tiện ích ----------------
   function msg(t, cls) { var m = $('stMsg'); m.textContent = t || ''; m.className = cls || ''; }
-  function busy(on) { $('busy').style.display = on ? 'block' : 'none'; }
+  function busy(on) {
+    $('busy').style.display = on ? 'block' : 'none';
+    if (on && !$('busyText').textContent) $('busyText').textContent = 'Đang dựng bản vẽ…';
+    if (!on) { $('busyText').textContent = ''; $('busyPct').textContent = ''; $('busyBar').style.width = '0'; }
+  }
   function page() { return S.project && S.project.pages.filter(function (p) { return p.id === S.cur; })[0]; }
   function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
   function opt(sel, items, val) {
@@ -139,7 +149,12 @@
   }
 
   var STATUS = { nested: '⚠ bộ phận con', deleted: '⚠ đã xoá' };
-  function badge(p) { var st = (S.status || {})[p.id]; return STATUS[st] ? ' · <b style="color:#b3261e">' + STATUS[st] + '</b>' : ''; }
+  var RESULT = { partial: '◐ chưa đầy đủ', empty: '○ chưa có bản vẽ' };
+  function badge(p) {
+    var st = (S.status || {})[p.id], rs = (S.result || {})[p.id];
+    if (STATUS[st]) return ' · <b style="color:#b3261e">' + STATUS[st] + '</b>';
+    return RESULT[rs] ? ' · <b style="color:#8a5a12">' + RESULT[rs] + '</b>' : '';
+  }
   function badPages() { return S.project.pages.filter(function (p) { return STATUS[(S.status || {})[p.id]]; }); }
 
   function renderPageProps() {
@@ -182,6 +197,9 @@
   }
   function showSvg(svg, info) {
     S.info = info;
+    S.result = S.result || {};
+    S.result[S.cur] = info.complete ? 'ok' : (info.levels && Object.keys(info.levels).length ? 'partial' : 'empty');
+    renderPages();
     var paper = $('paper');
     paper.innerHTML = svg;
     var p = page();
@@ -328,6 +346,7 @@
   $('zout').onclick = function () { var s = $('stage'); zoomAt(1 / 1.25, s.clientWidth / 2, s.clientHeight / 2); };
   $('zfit').onclick = fit;
   $('undo').onclick = undo; $('redo').onclick = redo;
+  $('cancel').onclick = function () { call('cancel', null); };
   $('refresh').onclick = function () { if (!S.cur) return; busy(true); call('refresh', { project: S.project, page_id: S.cur }); };
   $('save').onclick = save;
   $('pdfPage').onclick = function () { if (S.cur) call('export_pdf', { project: S.project, page_ids: [S.cur] }); };

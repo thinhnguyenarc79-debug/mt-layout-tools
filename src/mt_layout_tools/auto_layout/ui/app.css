@@ -60,7 +60,10 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 #status { height: 26px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; background: #f6f5f0; border-top: 1px solid #d6d3c8; font-size: 11px; }
 #stMsg.err { color: #b3261e; } #stMsg.warn { color: #8a5a12; } #stMsg.ok { color: #2F4A3A; }
 #stInfo { color: #7a817c; }
-#busy { position: absolute; right: 14px; bottom: 36px; background: #2F4A3A; color: #fff; padding: 5px 10px; border-radius: 4px; display: none; }
+#busy { position: absolute; right: 14px; bottom: 36px; background: #2F4A3A; color: #fff; padding: 8px 10px; border-radius: 4px; display: none; width: 340px; }
+#busy .bar { height: 4px; background: rgba(255,255,255,.2); margin: 6px 0; border-radius: 2px; overflow: hidden; }
+#busy .bar i { display: block; height: 100%; width: 0; background: #C9A45C; transition: width .2s; }
+#busy button { padding: 2px 10px; }
 #propView table { width: 100%; border-collapse: collapse; }
 #propView td { padding: 3px 0; border-bottom: 1px solid #ebe9e1; }
 #propView td:first-child { color: #7a817c; width: 45%; }
