@@ -14,7 +14,9 @@ module MTDesign
       class PageBuild
         # env: đối tượng cung cấp find(pid) -> entity|nil, page_status(pg), capture_builder(entity, exclude, front),
         #      cache (Hash dùng chung giữa các lần dựng), log(msg)
-        def initialize(env, project, pg, fmt)
+        # numbering: lambda(page, số tờ) -> mã tờ đầu (xuất PDF nhiều trang đánh số liên tiếp); mặc định page['sheet_no'].
+        def initialize(env, project, pg, fmt, numbering = nil)
+          @numbering = numbering || ->(page, _n) { page['sheet_no'].to_s.empty? ? 'A-01' : page['sheet_no'] }
           @env = env
           @project = project
           @pg = pg
@@ -317,6 +319,7 @@ module MTDesign
             @pw, @ph = Sheet.paper(@project['paper'])
             sheets = Sheet.paginate(@views, @mats, @pg, @pw, @ph)
             @outputs = Array.new(sheets.length)
+            @base_code = @numbering.call(@pg, sheets.length)
             steps = sheets.each_with_index.flat_map { |(group, forced, note), i| sheet_tasks(i, sheets.length, group, forced, note) }
             job.insert_next(steps)
           end
@@ -342,12 +345,13 @@ module MTDesign
         def assemble_task(idx, total, group, st, note)
           Job.once("ghép tờ #{idx + 1}") do
             cv = Canvas.new(@fmt, @pw, @ph)
-            no = total > 1 ? "#{@pg['sheet_no']} (#{idx + 1}/#{total})" : @pg['sheet_no']
+            no = ProjectStore.increment(@base_code, idx)
             tb = @project['tb'].merge('sheet_name' => @pg['name'], 'sheet_no' => no)
+            tb['sheet_of'] = "Tờ #{idx + 1}/#{total}" if total > 1
             notes = idx.zero? ? @notes.dup : []
             notes << note if note
-            # chú thích, ký hiệu chỉ đặt trên tờ 1 (tọa độ chú thích là của tờ chính)
-            pg = idx.zero? ? @pg : @pg.merge('notes' => [])
+            # mỗi tờ chỉ vẽ chú thích của chính nó
+            pg = @pg.merge('notes' => Array(@pg['notes']).select { |n| n['sheet'].to_i == idx })
             info = Sheet.assemble(cv, st[:ctx], st[:frags], pg, tb, notes)
             info['note'] = notes.empty? ? info['note'] : [info['note'], *notes].compact.uniq.join(' ')
             info['failed'] = @failed
@@ -359,6 +363,7 @@ module MTDesign
             info['doors'] = Array(@doors).map { |d| { 'name' => d['name'], 'reason' => d['reason'], 'path' => d['path'] } }
             info['sheet'] = idx
             info['sheets'] = total
+            info['code'] = no
             @outputs[idx] = [@fmt == :svg ? cv.svg : cv.content, info]
             st.clear
           end

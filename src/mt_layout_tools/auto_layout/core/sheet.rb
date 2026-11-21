@@ -590,7 +590,9 @@ module MTDesign
           hl.call(y)
 
           cv.text_left('KÝ HIỆU BẢN VẼ', x0 + 1.5, y + 2.4, 1.7, GREY)
-          cv.text(o['sheet_no'].to_s, (x0 + x1) / 2, (y + bottom) / 2 + 1.5, [6, (bottom - y) * 0.35].min, 0, INK)
+          big = [6, (bottom - y) * 0.35].min
+          cv.text(o['sheet_no'].to_s, (x0 + x1) / 2, (y + bottom) / 2 + 1.5, big, 0, INK)
+          cv.text(o['sheet_of'].to_s, (x0 + x1) / 2, (y + bottom) / 2 + 1.5 + big * 0.9 + 1.5, 2.0, 0, GREY) if o['sheet_of']
         end
 
         def field(cv, label, value, x0, x1, y, h, size)

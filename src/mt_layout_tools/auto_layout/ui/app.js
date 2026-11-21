@@ -46,6 +46,8 @@
         if (!pd || pd.pid !== d.pid) return;
         snapshot(); pd.doors = d.paths; changed(); requestRender(true);
         msg('Đã nhận ' + d.paths.length + ' cánh: ' + d.names.join(', '), 'ok');
+      } else if (kind === 'sheets') {
+        S.project.pages.forEach(function (p) { if (d[p.id]) p.sheet_count = d[p.id]; }); renderPages();
       } else if (kind === 'warn') {
         msg(d.message, 'warn');
       } else if (kind === 'saved') {
@@ -139,18 +141,20 @@
   }
 
   function renderPages() {
-    var ps = S.project.pages;
-    $('pgCount').textContent = ps.length;
-    $('pgList').innerHTML = ps.length ? ps.map(function (p) {
-      return '<div class="it' + (p.id === S.cur ? ' cur' : '') + '" data-id="' + p.id + '">' +
-        '<span class="no">' + esc(p.sheet_no) + '</span><span class="nm">' + esc(p.name) + '</span>' +
-        '<span class="sz">' + p.views.length + ' hình' + badge(p) + '</span></div>';
+    var ps = S.project.pages, rows = sheetRows();
+    $('pgCount').textContent = rows.length;
+    $('pgList').innerHTML = rows.length ? rows.map(function (r) {
+      var p = r.page, cur = p.id === S.cur && r.j === (S.sheet || 0);
+      return '<div class="it' + (cur ? ' cur' : '') + '" data-id="' + p.id + '" data-j="' + r.j + '">' +
+        '<span class="no">' + esc(r.code) + '</span><span class="nm">' + esc(p.name) + '</span>' +
+        '<span class="sz">' + (r.n > 1 ? 'Tờ ' + (r.j + 1) + '/' + r.n : p.views.length + ' hình') + (r.j === 0 ? badge(p) : '') + '</span></div>';
     }).join('') : '<div class="empty">Chưa có trang.</div>';
     var bad = badPages().length;
     $('pgClean').style.display = bad ? 'block' : 'none';
     $('pgClean').textContent = '🧹 Dọn ' + bad + ' trang lỗi (bộ phận con / đã xoá)';
     $('empty').style.display = ps.length ? 'none' : 'flex';
     $('paper').style.display = ps.length ? 'block' : 'none';
+    renderNav();
   }
 
   var STATUS = { nested: '⚠ bộ phận con', deleted: '⚠ đã xoá' };
@@ -162,12 +166,17 @@
   }
   function badPages() { return S.project.pages.filter(function (p) { return STATUS[(S.status || {})[p.id]]; }); }
 
+  function curCode() {
+    var rows = sheetRows(), p = page();
+    for (var i = 0; i < rows.length; i++) if (rows[i].page === p && rows[i].j === 0) return rows[i].code;
+    return p ? p.sheet_no : '';
+  }
   function renderPageProps() {
     renderSections(); renderNotes(); renderDetails();
     var p = page(), box = $('propPage');
     box.querySelectorAll('input,select,button').forEach(function (e) { e.disabled = !p; });
     if (!p) return;
-    $('pgName').value = p.name; $('pgNo').value = p.sheet_no; $('pgScale').value = String(p.scale);
+    $('pgName').value = p.name; $('pgNo').value = curCode(); $('pgScale').value = String(p.scale);
     $('pgFront').value = p.front; setChecks($('pgViews'), p.views);
     $('pgFrontDims').value = p.front_dims || 'auto';
     $('pgGap').value = p.min_gap; $('pgRound').value = p.round; $('pgFill').checked = p.fill; $('pgDims').checked = p.dims;
@@ -186,6 +195,42 @@
     $('vReset').onclick = function () {
       snapshot(); delete page().offsets[S.sel]; changed();
     };
+  }
+
+  // ---------------- tờ giấy: mỗi tờ thật = 1 dòng ----------------
+  function incCode(code, j) {
+    if (!j) return code;
+    var m = /^(.*?)(\d+)(\D*)$/.exec(code || '');
+    if (!m) return (code || 'A') + '-' + (j + 1);
+    var n = String(parseInt(m[2], 10) + j); while (n.length < m[2].length) n = '0' + n;
+    return m[1] + n + m[3];
+  }
+  // cùng thuật toán với ProjectStore.sheet_codes (Ruby)
+  function sheetRows() {
+    var rows = [], prev = null;
+    S.project.pages.forEach(function (p) {
+      var n = Math.max(1, Math.min(50, p.sheet_count || 1));
+      var base = (p.auto_no !== false && prev) ? incCode(prev, 1) : (p.sheet_no || 'A-01');
+      for (var j = 0; j < n; j++) rows.push({ page: p, j: j, n: n, code: incCode(base, j) });
+      prev = incCode(base, n - 1);
+    });
+    return rows;
+  }
+  function curRowIndex(rows) {
+    for (var i = 0; i < rows.length; i++) if (rows[i].page.id === S.cur && rows[i].j === (S.sheet || 0)) return i;
+    return -1;
+  }
+  function gotoRow(k) {
+    var rows = sheetRows(); if (!rows.length) return;
+    k = Math.max(0, Math.min(rows.length - 1, k));
+    var r = rows[k];
+    if (r.page.id === S.cur) { S.sheet = r.j; S.selNote = null; renderPages(); requestRender(true); }
+    else openPage(r.page.id, r.j);
+  }
+  function renderNav() {
+    var rows = sheetRows(), i = curRowIndex(rows);
+    $('shLbl').textContent = i >= 0 ? rows[i].code + ' · ' + (i + 1) + '/' + rows.length : '–';
+    $('shPrev').disabled = i <= 0; $('shNext').disabled = i < 0 || i >= rows.length - 1;
   }
 
   // ---------------- cánh tủ ----------------
@@ -267,7 +312,7 @@
     if (type === 'material' && !mats.length) { msg('Model không có vật liệu nào để ghi chú. Dùng Leader để ghi chú tự do.', 'err'); S.undo.pop(); return; }
     var n = { id: newId('n'), type: type, x: at[0], y: at[1], tx: (tip || at)[0], ty: (tip || at)[1],
               text: type === 'material' ? matText(0) : (type === 'mtext' ? 'Dòng 1\nDòng 2' : 'Ghi chú'),
-              size: 2.5, color: '#1E1E1E', arrow: 'arrow', layer: 'GHI CHÚ' };
+              size: 2.5, color: '#1E1E1E', arrow: 'arrow', layer: 'GHI CHÚ', sheet: S.sheet || 0 };
     p.notes.push(n); S.selNote = n.id; S.sel = null;
     renderNotes(); changed(); requestRender(true);
     setTimeout(function () { var t = $('nText'); if (t) { t.focus(); t.select(); } }, 50);
@@ -366,8 +411,8 @@
   }
 
   // ---------------- trang & dựng ----------------
-  function openPage(id) {
-    S.cur = id || null; S.sel = null; S.info = null; S.sheet = 0;
+  function openPage(id, j) {
+    S.cur = id || null; S.sel = null; S.info = null; S.sheet = j || 0; S.selNote = null;
     renderPages(); renderPageProps(); renderViewProps();
     $('paper').innerHTML = '';
     if (S.cur) requestRender(true);
@@ -381,6 +426,11 @@
   }
   function showSvg(svg, info) {
     S.info = info;
+    var pp = page();
+    if (pp && info.sheets && pp.sheet_count !== info.sheets) {
+      pp.sheet_count = info.sheets; markDirty(); // số tờ thật thay đổi (đổi tỉ lệ...) -> danh sách cập nhật ngay
+      if ((S.sheet || 0) >= info.sheets) { S.sheet = info.sheets - 1; renderPages(); requestRender(true); return; }
+    }
     S.result = S.result || {};
     S.result[S.cur] = info.complete ? 'ok' : (info.levels && Object.keys(info.levels).length ? 'partial' : 'empty');
     renderPages();
@@ -390,10 +440,7 @@
     if (p && info.offsets) p.offsets = info.offsets; // đồng bộ vị trí đã kẹp trong vùng vẽ
     if (p && info.sections && p.sections == null) p.sections = info.sections; // nhận vị trí cắt plugin đề xuất
     renderSections(); renderDetails(); renderDoors(); if (S.selNote) renderNotes();
-    var n = info.sheets || 1;
-    $('sheetNav').style.display = n > 1 ? 'inline' : 'none';
-    $('shLbl').textContent = 'Tờ ' + ((info.sheet || 0) + 1) + '/' + n;
-    S.nSheets = n;
+    renderNav();
     var svgEl = paper.querySelector('svg');
     svgEl.removeAttribute('width'); svgEl.removeAttribute('height');
     svgEl.querySelectorAll('g.view').forEach(function (g) {
@@ -578,6 +625,8 @@
     if (e.key === 'l' || e.key === 'L') setTool('leader');
     if (e.key === 'd' || e.key === 'D') setTool('detail');
     if (e.key === 'Escape') setTool('select');
+    if (e.key === 'PageDown') { e.preventDefault(); gotoRow(curRowIndex(sheetRows()) + 1); }
+    if (e.key === 'PageUp') { e.preventDefault(); gotoRow(curRowIndex(sheetRows()) - 1); }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selNote) { e.preventDefault(); deleteNote(); return; }
     if (S.sel && /^Arrow/.test(e.key)) {
       e.preventDefault(); snapshot();
@@ -623,8 +672,8 @@
   $('zfit').onclick = fit;
   $('undo').onclick = undo; $('redo').onclick = redo;
   $('cancel').onclick = function () { call('cancel', null); };
-  $('shPrev').onclick = function () { if ((S.sheet || 0) > 0) { S.sheet--; requestRender(true); } };
-  $('shNext').onclick = function () { if ((S.sheet || 0) < (S.nSheets || 1) - 1) { S.sheet++; requestRender(true); } };
+  $('shPrev').onclick = function () { gotoRow(curRowIndex(sheetRows()) - 1); };
+  $('shNext').onclick = function () { gotoRow(curRowIndex(sheetRows()) + 1); };
   $('pickDoors').onclick = function () { var p = page(); if (p) call('pick_doors', String(p.pid)); };
   $('clearDoors').onclick = function () {
     var p = page(); if (!p || !(p.doors || []).length) return;
@@ -633,7 +682,7 @@
   };
   $('refresh').onclick = function () { if (!S.cur) return; busy(true); call('refresh', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 }); };
   $('save').onclick = save;
-  $('pdfPage').onclick = function () { if (S.cur) call('export_pdf', { project: S.project, page_ids: [S.cur] }); };
+  $('pdfPage').onclick = function () { if (S.cur) call('export_pdf', { project: S.project, page_ids: [S.cur], sheet: S.sheet || 0 }); };
   $('pdfAll').onclick = function () { call('export_pdf', { project: S.project, page_ids: [] }); };
   $('svgPage').onclick = function () { if (S.cur) call('export_svg', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 }); };
   $('openJson').onclick = function () { call('open_json', null); };
@@ -686,7 +735,12 @@
   ['dViews', 'dScale', 'dFront', 'dGap', 'dRound', 'dFill', 'dDims'].forEach(function (id) { $(id).addEventListener('change', readDefaults); });
 
   // Trang giấy
-  $('pgList').onclick = function (e) { var it = e.target.closest('.it'); if (it) openPage(it.dataset.id); };
+  $('pgList').onclick = function (e) {
+    var it = e.target.closest('.it'); if (!it) return;
+    var j = parseInt(it.dataset.j || '0', 10);
+    if (it.dataset.id === S.cur) { if (j !== S.sheet) { S.sheet = j; S.selNote = null; renderPages(); requestRender(true); } }
+    else openPage(it.dataset.id, j);
+  };
   $('pgList').ondblclick = function (e) {
     var it = e.target.closest('.it'); if (!it) return;
     var p = S.project.pages.filter(function (x) { return x.id === it.dataset.id; })[0];
@@ -702,7 +756,8 @@
   $('pgDown').onclick = function () { movePage(1); };
   $('pgDel').onclick = function () {
     var p = page(); if (!p) return;
-    if (!window.confirm('Xoá trang ' + p.sheet_no + ' – ' + p.name + '? (Hoàn tác được bằng Ctrl+Z)')) return;
+    var n = p.sheet_count || 1;
+    if (!window.confirm('Xoá ' + (n > 1 ? n + ' tờ' : 'trang') + ' của model "' + p.name + '"? (Hoàn tác được bằng Ctrl+Z)')) return;
     snapshot(); var ps = S.project.pages, i = ps.indexOf(p); ps.splice(i, 1); changed(false);
     openPage(ps[Math.min(i, ps.length - 1)] ? ps[Math.min(i, ps.length - 1)].id : null);
   };
@@ -724,7 +779,9 @@
   function readPage() {
     var p = page(); if (!p) return;
     snapshot();
-    p.name = $('pgName').value; p.sheet_no = $('pgNo').value; p.scale = parseInt($('pgScale').value, 10);
+    p.name = $('pgName').value;
+    if ($('pgNo').value !== curCode()) { p.sheet_no = $('pgNo').value; p.auto_no = false; }
+    p.scale = parseInt($('pgScale').value, 10);
     p.front = $('pgFront').value; p.views = getChecks($('pgViews'));
     p.front_dims = $('pgFrontDims').value;
     p.min_gap = parseFloat($('pgGap').value) || 0; p.round = parseFloat($('pgRound').value) || 1;

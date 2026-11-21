@@ -225,7 +225,9 @@ module MTDesign
           raise ArgumentError, 'Không tìm thấy trang.' unless page
 
           t0 = Time.now
-          pb = PageBuild.new(env, project, page, :svg)
+          pb = PageBuild.new(env, project, page, :svg, lambda { |p, n|
+            ProjectStore.sheet_codes(project, { p['id'] => n })[p['id']].first
+          })
           want = data['sheet'].to_i
           start_job(d, 'render', pb.tasks, lambda do
             outs = pb.outputs
@@ -256,17 +258,32 @@ module MTDesign
           raise ArgumentError, 'Không có trang nào để xuất.' if pages.empty?
 
           pw, ph = Sheet.paper(project['paper'])
-          builds = pages.map { |pg| PageBuild.new(env, project, pg, :pdf) }
+          only = data['sheet'] # xuất riêng 1 tờ (nút "PDF tờ này")
+          # Mã tờ: như danh sách TRANG GIẤY; khi xuất tất cả thì đánh liên tiếp theo số tờ THỰC dựng được lúc xuất.
+          codes0 = ProjectStore.sheet_codes(project)
+          prev = nil
+          numbering = lambda do |pg, n|
+            base = ids.empty? && pg['auto_no'] && prev ? ProjectStore.increment(prev, 1) : codes0[pg['id']].first
+            prev = ProjectStore.increment(base, n - 1)
+            base
+          end
+          builds = pages.map { |pg| PageBuild.new(env, project, pg, :pdf, numbering) }
           tasks = builds.each_with_index.flat_map do |pb, i|
             [Job.once('trang') { |j| j.progress("Xuất PDF: trang #{i + 1}/#{pages.length} (#{pages[i]['sheet_no']})", 100.0 * i / pages.length) }] + pb.tasks
           end
           start_job(d, 'export_pdf', tasks, lambda do
             contents = builds.flat_map { |pb| pb.outputs.map(&:first) }
+            contents = [builds[0].outputs[only.to_i.clamp(0, builds[0].outputs.length - 1)][0]] if !only.nil? && builds.length == 1
             notes = builds.each_with_index.filter_map { |pb, i| "#{pages[i]['sheet_no']}: #{pb.output[1]['note']}" if pb.output[1]['note'] }
             bytes = Pdf.pdf_pages(contents, [pw * Pdf::MM_TO_PT, ph * Pdf::MM_TO_PT])
-            name = pages.length == 1 ? "#{pages[0]['sheet_no']} #{pages[0]['name']}" : project['name']
+            name = if !only.nil? && builds.length == 1
+                     "#{builds[0].outputs[only.to_i.clamp(0, builds[0].outputs.length - 1)][1]['code']} #{pages[0]['name']}"
+                   elsif pages.length == 1 then "#{pages[0]['sheet_no']} #{pages[0]['name']}"
+                   else project['name']
+                   end
             path = save_file(name, 'pdf', bytes)
-            msg = path ? "Đã xuất #{pages.length} trang (#{contents.length} tờ): #{File.basename(path)}" : 'Đã huỷ lưu.'
+            push(d, 'sheets', builds.each_with_index.to_h { |pb, i| [pages[i]['id'], pb.outputs.length] })
+            msg = path ? "Đã xuất #{contents.length} tờ: #{File.basename(path)}" : 'Đã huỷ lưu.'
             msg += " Lưu ý – #{notes.join(' | ')}" unless notes.empty?
             push(d, notes.empty? ? 'saved' : 'warn', { 'message' => msg })
             UI.openURL("file:///#{path.tr('\\', '/')}") if path
@@ -279,10 +296,12 @@ module MTDesign
           page = project['pages'].find { |p| p['id'] == data['page_id'] }
           raise ArgumentError, 'Không tìm thấy trang.' unless page
 
-          pb = PageBuild.new(env, project, page, :svg)
+          pb = PageBuild.new(env, project, page, :svg, lambda { |p, n|
+            ProjectStore.sheet_codes(project, { p['id'] => n })[p['id']].first
+          })
           start_job(d, 'export_svg', pb.tasks, lambda do
             idx = data['sheet'].to_i.clamp(0, pb.outputs.length - 1)
-            path = save_file("#{page['sheet_no']} #{page['name']}#{pb.outputs.length > 1 ? " to #{idx + 1}" : ''}", 'svg', pb.outputs[idx][0])
+            path = save_file("#{pb.outputs[idx][1]['code']} #{page['name']}", 'svg', pb.outputs[idx][0])
             push(d, 'saved', { 'message' => path ? "Đã xuất #{File.basename(path)}" : 'Đã huỷ lưu.' })
           end)
         end

@@ -21,18 +21,21 @@
       <button data-tool="detail" class="tool" title="Chi tiết phóng to: kéo khung trên một hình chiếu/mặt cắt (D)">⊡ Chi tiết</button>
     </span>
     <span class="grp">
-      <button id="zout" title="Thu nhỏ">−</button><button id="zfit" title="Vừa khung (F)">Vừa khung</button><button id="zin" title="Phóng to">+</button>
+      <button id="zout" title="Thu nhỏ">−</button><button id="zfit" title="Vừa khung (F)">⤢</button><button id="zin" title="Phóng to">+</button>
     </span>
     <span class="grp">
       <button id="undo" title="Hoàn tác (Ctrl+Z)">↶</button><button id="redo" title="Làm lại (Ctrl+Y)">↷</button>
     </span>
+    <span class="grp" id="nav" title="Chuyển tờ (PageUp / PageDown)">
+      <button id="shPrev">◀ Tờ trước</button><span id="shLbl" class="navlbl">–</span><button id="shNext">Tờ sau ▶</button>
+    </span>
     <span class="grp">
-      <button id="refresh" title="Đọc lại hình học từ SketchUp và vẽ lại trang">⟳ Cập nhật bản vẽ</button>
+      <button id="refresh" title="Đọc lại hình học từ SketchUp và vẽ lại trang">⟳ Cập nhật</button>
     </span>
     <span class="grp">
       <button id="save" class="gold" title="Lưu dự án vào file SketchUp">💾 Lưu</button>
-      <button id="pdfPage" title="Xuất trang đang mở ra PDF">PDF trang</button>
-      <button id="pdfAll" title="Xuất tất cả trang thành 1 PDF nhiều trang">PDF tất cả</button>
+      <button id="pdfPage" title="Xuất riêng tờ đang mở ra PDF">PDF tờ</button>
+      <button id="pdfAll" title="Xuất tất cả các tờ thành 1 PDF nhiều trang">PDF tất cả</button>
       <button id="svgPage" title="Xuất trang đang mở ra SVG">SVG</button>
     </span>
   </div>
@@ -93,7 +96,7 @@
         <div id="pgList" class="list pages"></div>
         <div class="btns"><button id="pgUp">▲</button><button id="pgDown">▼</button><button id="pgDel" class="danger">✕ Xoá trang</button></div>
         <button id="pgClean" class="wide" style="display:none">🧹 Dọn trang lỗi</button>
-        <p class="hint">Bấm đúp vào tên trang để đổi tên.</p>
+        <p class="hint">Mỗi dòng là 1 tờ giấy thật. Một model cần nhiều tờ (do tỉ lệ) sẽ có nhiều dòng liên tiếp A-01, A-02… Bấm đúp để đổi tên; Xoá/▲▼ áp dụng cho cả bộ tờ của model đó.</p>
       </div>
     </section>
     <section data-sec="tb">
@@ -116,7 +119,7 @@
       <div id="paper"></div>
       <div id="empty"><div>Chưa có trang nào.<br>Chọn Group/Component trong SketchUp → bấm <b>⤓ Lấy đối tượng đang chọn</b> → <b>▶ Tự động triển khai</b>.</div></div>
     </div>
-    <div id="status"><span id="stMsg"></span><span id="sheetNav" style="display:none"><button id="shPrev">◀</button> <span id="shLbl"></span> <button id="shNext">▶</button></span><span id="stInfo"></span></div>
+    <div id="status"><span id="stMsg"></span><span id="stInfo"></span></div>
     <div id="busy"><span id="busyText">Đang dựng bản vẽ…</span> <span id="busyPct"></span>
       <div class="bar"><i id="busyBar"></i></div>
       <button id="cancel" title="Huỷ tác vụ đang chạy">Huỷ</button></div>
@@ -126,7 +129,7 @@
     <h3>Thuộc tính trang</h3>
     <div id="propPage" class="body">
       <label>Tên bản vẽ</label><input id="pgName" type="text">
-      <div class="row"><div><label>Ký hiệu</label><input id="pgNo" type="text"></div><div><label>Tỉ lệ</label><select id="pgScale"></select></div></div>
+      <div class="row"><div><label>Mã tờ đầu</label><input id="pgNo" type="text" title="Mã tờ đầu của model này; các tờ sau tự tăng. Sửa tay thì không tự đánh số nữa."></div><div><label>Tỉ lệ</label><select id="pgScale"></select></div></div>
       <label>Hướng mặt trước</label><select id="pgFront"></select>
       <label>DIM mặt đứng chính</label>
       <select id="pgFrontDims">

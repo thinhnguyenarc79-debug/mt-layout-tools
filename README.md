@@ -58,7 +58,7 @@ tools/build_rbz.py                        đóng gói + version.json
 | Chú thích: Text, nhiều dòng, Leader, ghi chú vật liệu (chọn từ vật liệu có trong model), layer ẩn/hiện | ✅ v2.3 |
 | Chi tiết phóng to (khoanh vùng trên hình chiếu/mặt cắt, tỉ lệ riêng, DIM, hatch) | ✅ v2.3 |
 | Phân biệt DIM có cánh / tháo cánh: nhận diện cánh (chọn tay theo đường dẫn instance, thuộc tính, Tag, tên); bộ DIM Exterior/Door/Interior/Section; chống chồng chữ; kéo hàng DIM | ✅ v2.4 |
-| Giữ đúng tỉ lệ đã chọn: tự chia nhiều tờ (A-01 (1/n)…), PDF xuất đủ tờ | ✅ v2.4 |
+| Giữ đúng tỉ lệ đã chọn: tự chia nhiều tờ; mỗi tờ là 1 dòng ở TRANG GIẤY với mã riêng A-01, A-02…, nút Tờ trước/Tờ sau, PDF tờ / PDF tất cả | ✅ v2.4.1 |
 | Job Engine máy trạng thái (không Fiber/Thread) | ✅ v2.3.1 |
 | Model lớn: cache definition, lưới không gian, 3 mức dự phòng, tiến trình + Huỷ, log | ✅ v2.1 |
 | Nét đứt cho cạnh khuất, phân cấp nét bao/cấu tạo, đường trục | ⏳ Giai đoạn 2 |

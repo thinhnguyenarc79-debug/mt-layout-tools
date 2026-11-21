@@ -17,7 +17,7 @@ label { display: block; margin: 5px 0 2px; color: #5b6660; }
 .badge { background: #C9A45C; color: #1f2a24; border-radius: 8px; padding: 0 6px; font-size: 10px; margin-left: 4px; }
 
 #top { height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 10px; background: #2F4A3A; color: #fff; flex: none; }
-.brand { font-size: 14px; letter-spacing: .5px; white-space: nowrap; } .brand b { color: #C9A45C; }
+.brand { font-size: 12px; letter-spacing: .5px; white-space: nowrap; } .brand b { color: #C9A45C; }
 .tools { display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; }
 .grp { display: inline-flex; gap: 2px; padding-right: 8px; border-right: 1px solid rgba(255,255,255,.2); }
 .grp:last-child { border-right: 0; }
@@ -90,3 +90,10 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 #paper g.dimset[data-side="left"], #paper g.dimset[data-side="right"] { cursor: ew-resize; }
 .door-it { display: flex; gap: 6px; padding: 2px 0; border-bottom: 1px solid #f0eee6; }
 .door-it .why { color: #8a8f8b; font-size: 10px; margin-left: auto; }
+
+.navlbl { display: inline-block; min-width: 120px; text-align: center; color: #fff; font-weight: 600; padding: 4px 6px; }
+.list.pages .it .of { color: #7a817c; font-size: 10px; margin-left: 4px; }
+.list.pages .it.cur .of { color: #C9A45C; }
+#top button { white-space: nowrap; flex: none; padding: 5px 7px; }
+#top .grp { flex: none; }
+.tools { scrollbar-width: thin; }

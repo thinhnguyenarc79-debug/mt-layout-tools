@@ -78,6 +78,9 @@ module MTDesign
             'pid' => pg['pid'].to_i,
             'name' => str(pg['name']),
             'sheet_no' => str(pg['sheet_no'], 40),
+            # số tờ giấy thật của trang (cập nhật sau mỗi lần dựng); mã tờ đánh tự động liên tiếp nếu auto_no
+            'sheet_count' => pg.fetch('sheet_count', 1).to_i.clamp(1, 50),
+            'auto_no' => pg['auto_no'] != false,
             'root' => pg['root'] != false, # trang cũ (v1) mặc định coi như tạo từ đối tượng ở gốc model
             'sections' => clean_sections(pg['sections']),
             'notes' => AnnotationEngine.clean(pg['notes']),
@@ -124,6 +127,31 @@ module MTDesign
             end
           end
           res
+        end
+
+        # Mã tờ thứ j (0-based) tính từ mã tờ đầu: "A-01" -> "A-02"; giữ số chữ số. Không có số -> "X-2".
+        def increment(code, j)
+          return code if j.zero?
+
+          m = code.to_s.match(/\A(.*?)(\d+)(\D*)\z/)
+          return "#{code}-#{j + 1}" unless m
+
+          "#{m[1]}#{(m[2].to_i + j).to_s.rjust(m[2].length, '0')}#{m[3]}"
+        end
+
+        # Đánh lại mã cho mọi tờ theo thứ tự trang: trang auto_no nhận mã liên tiếp sau tờ cuối của trang trước.
+        # counts: { page_id => số tờ } (mặc định page['sheet_count']). Trả về { page_id => [mã tờ 1, mã tờ 2, ...] }.
+        def sheet_codes(project, counts = {})
+          out = {}
+          prev = nil
+          project['pages'].each do |pg|
+            n = (counts[pg['id']] || pg['sheet_count'] || 1).to_i.clamp(1, 50)
+            base = pg['auto_no'] && prev ? increment(prev, 1) : (pg['sheet_no'].to_s.empty? ? 'A-01' : pg['sheet_no'])
+            codes = (0...n).map { |j| increment(base, j) }
+            out[pg['id']] = codes
+            prev = codes.last
+          end
+          out
         end
 
         def next_sheet_no(project)

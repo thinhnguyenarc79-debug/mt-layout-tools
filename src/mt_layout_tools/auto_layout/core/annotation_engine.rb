@@ -28,7 +28,8 @@ module MTDesign
               'size' => n.fetch('size', 2.5).to_f.clamp(1.0, 20.0),
               'color' => color,
               'arrow' => ARROWS.include?(n['arrow'].to_s) ? n['arrow'].to_s : 'arrow',
-              'layer' => (n['layer'].to_s.strip.empty? ? DEFAULT_LAYER : n['layer'].to_s.strip[0, 60])
+              'layer' => (n['layer'].to_s.strip.empty? ? DEFAULT_LAYER : n['layer'].to_s.strip[0, 60]),
+              'sheet' => n['sheet'].to_i.clamp(0, 49) # chú thích thuộc tờ nào của trang
             }
           end
         end

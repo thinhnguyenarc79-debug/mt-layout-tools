@@ -1,7 +1,7 @@
 {
-  "version": "2.4.0",
+  "version": "2.4.1",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "108457efeef566a8d00f4ba86b715e669eb20a23711824591efd3b699201d056",
-  "notes": "Phân biệt DIM có cánh / tháo cánh: nhận diện cánh (chọn tay trong SketchUp theo đường dẫn instance, thuộc tính, Tag, tên – không đoán hình dạng); mặt đứng chính chỉ DIM ngoài + cánh/khe; mặt đứng tháo cánh DIM vách/đợt/khoang/ván; mặt cắt DIM riêng; chữ DIM không đè nhau; kéo hàng DIM; giữ đúng tỉ lệ đã chọn bằng cách chia thêm tờ."
+  "sha256": "1da786190391a5d1762b702e244956e5f27d9d1d434b8a0b9c196b7ee92ff2b0",
+  "notes": "Mỗi tờ giấy thật là 1 dòng ở mục TRANG GIẤY, mã riêng A-01, A-02… (khung tên ghi thêm Tờ 1/n); đổi tỉ lệ cập nhật ngay danh sách và đánh lại mã, về 1:40 không thừa tờ; nút Tờ trước/Tờ sau trên thanh công cụ (PageUp/PageDown); PDF tờ này / PDF tất cả đủ số tờ; chú thích gắn theo từng tờ."
 }
