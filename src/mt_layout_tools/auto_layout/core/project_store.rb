@@ -79,8 +79,9 @@ module MTDesign
             'name' => str(pg['name']),
             'sheet_no' => str(pg['sheet_no'], 40),
             'root' => pg['root'] != false, # trang cũ (v1) mặc định coi như tạo từ đối tượng ở gốc model
+            'sections' => clean_sections(pg['sections']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
-              next unless VIEW_KEYS.include?(k.to_s) && v.is_a?(Array) && v.length == 2
+              next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\Asec:[A-Z]\z/) && v.is_a?(Array) && v.length == 2
 
               h[k.to_s] = v.map { |n| n.to_f.clamp(-2000, 2000) }
             end
@@ -123,6 +124,24 @@ module MTDesign
           n = project['pages'].length + 1
           n += 1 while used.include?(format('A-%02d', n))
           format('A-%02d', n)
+        end
+
+        # nil = chưa có -> plugin tự đề xuất ở lần dựng đầu; [] = người dùng đã xoá hết.
+        def clean_sections(list)
+          return nil if list.nil?
+
+          used = {}
+          Array(list).first(26).filter_map do |sc|
+            next unless sc.is_a?(Hash)
+
+            label = sc['label'].to_s.upcase[0]
+            next unless label =~ /[A-Z]/ && !used[label]
+            next unless SectionEngine::AXES.key?(sc['axis'].to_s)
+
+            used[label] = true
+            { 'label' => label, 'axis' => sc['axis'].to_s, 'pos' => sc['pos'].to_f.clamp(-1.0e6, 1.0e6).round(1),
+              'dir' => sc['dir'].to_i.negative? ? -1 : 1, 'auto' => sc['auto'] == true }
+          end
         end
 
         def load(model)

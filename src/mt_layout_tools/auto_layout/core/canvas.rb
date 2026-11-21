@@ -72,6 +72,22 @@ module MTDesign
           end
         end
 
+        def circle(c, r, fill, stroke, wt = 0.2)
+          if @fmt == :svg
+            @out << %(<circle cx="#{n(c[0])}" cy="#{n(c[1])}" r="#{n(r)}" fill="#{fill || 'none'}") +
+                    (stroke ? %( stroke="#{stroke}" stroke-width="#{n(wt)}") : '') + '/>'
+            return
+          end
+          k = 0.5523 * r
+          x, y = c
+          path = "#{xy([x + r, y])} m #{xy([x + r, y + k])} #{xy([x + k, y + r])} #{xy([x, y + r])} c " \
+                 "#{xy([x - k, y + r])} #{xy([x - r, y + k])} #{xy([x - r, y])} c " \
+                 "#{xy([x - r, y - k])} #{xy([x - k, y - r])} #{xy([x, y - r])} c " \
+                 "#{xy([x + k, y - r])} #{xy([x + r, y - k])} #{xy([x + r, y])} c h"
+          op = fill && stroke ? 'B' : (fill ? 'f' : 'S')
+          @out << "#{fill ? "#{rgb(fill)} rg " : ''}#{stroke ? "#{rgb(stroke)} RG #{Pdf.number(wt * K)} w " : ''}#{path} #{op}"
+        end
+
         def rect(x, y, w, h, fill, stroke, wt = 0.2)
           if @fmt == :svg
             @out << %(<rect x="#{n(x)}" y="#{n(y)}" width="#{n(w)}" height="#{n(h)}" fill="#{fill || 'none'}") +

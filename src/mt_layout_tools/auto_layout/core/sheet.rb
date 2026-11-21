@@ -18,6 +18,9 @@ module MTDesign
         GOLD = '#C9A45C'.freeze
         GREY = '#6B6B6B'.freeze
         SEL = '#C9A45C'.freeze
+        HATCH = '#4A4A4A'.freeze
+        CUT_RED = '#C0392B'.freeze
+        MARK_VIEWS = %w[front open top].freeze
 
         def paper(name)
           PAPERS.fetch(name.to_s, PAPERS['A3'])
@@ -184,6 +187,12 @@ module MTDesign
           tf = ->(p) { [ox + p[0] / s, oy + p[1] / s] }
           v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
           chain(v[:lines].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.25, INK) }
+          if v[:cut]
+            loops = v[:cut][:loops].map { |lp| lp.map(&tf) }
+            SectionEngine.hatch(loops).each { |a, b| cv.line(a, b, 0.13, HATCH) }
+            chain(v[:cut][:segs].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.5, INK) }
+          end
+          section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
           DimensionEngine.draw(cv, v, s, ox, oy, page) if v[:dims] && page.fetch('dims', true)
           caption(cv, v[:name], "TL 1:#{s}", ox + vw / 2, base + 6.5)
           return unless v[:level].to_i >= 3
@@ -242,6 +251,52 @@ module MTDesign
           return [a, b] if dmax <= tol
 
           simplify(pts[0..far], tol)[0..-2] + simplify(pts[far..-1], tol)
+        end
+
+        # Ký hiệu đường cắt trên mặt đứng / mặt bằng: nét gạch chấm, vòng tròn chữ cái, mũi tên hướng nhìn.
+        # Nhóm SVG class "secmark" để kéo đường cắt trực tiếp trên giấy.
+        def section_marks(cv, v, s, ox, oy, sections)
+          l, t = v[:origin]
+          vw = v[:w] / s
+          vh = v[:h] / s
+          Array(sections).each do |sec|
+            pos = sec['pos'].to_f
+            dir = sec['dir'].to_i.positive? ? 1 : -1
+            vertical = sec['axis'] == 'x'
+            if vertical
+              x = ox + (pos - l) / s
+              next if x < ox - 0.01 || x > ox + vw + 0.01
+
+              a = [x, oy - 17]     # vượt qua 2 hàng DIM phía trên
+              b = [x, oy + vh + 3] # không đè tên hình phía dưới
+              arrow = [dir * 1.0, 0.0]
+            else
+              # mặt đứng: z -> v = -z ; mặt bằng: y -> v = -y
+              next if (v[:key] == 'top') != (sec['axis'] == 'y')
+
+              y = oy + (-pos - t) / s
+              next if y < oy - 0.01 || y > oy + vh + 0.01
+
+              a = [ox - 13, y]
+              b = [ox + vw + 12, y]
+              # z nhìn xuống (dir -1) -> mũi tên xuống (v tăng); y nhìn ra sau (dir +1) -> mũi tên lên (về phía -v)
+              arrow = sec['axis'] == 'z' ? [0.0, -dir * 1.0] : [0.0, -dir * 1.0]
+            end
+            cv.group('class' => 'secmark', 'data-sec' => sec['label'], 'data-axis' => sec['axis']) do
+              cv.line(a, b, 0.25, CUT_RED, [5, 1, 1, 1])
+              [a, b].each do |p|
+                tip = [p[0] + arrow[0] * 4.5, p[1] + arrow[1] * 4.5]
+                cv.line(p, tip, 0.35, CUT_RED)
+                side = [-arrow[1], arrow[0]]
+                cv.poly([tip, [tip[0] - arrow[0] * 1.6 + side[0] * 0.9, tip[1] - arrow[1] * 1.6 + side[1] * 0.9],
+                         [tip[0] - arrow[0] * 1.6 - side[0] * 0.9, tip[1] - arrow[1] * 1.6 - side[1] * 0.9]], CUT_RED)
+                # vòng chữ cái đặt phía ngược mũi tên, sát đầu đường cắt
+                c = vertical ? [p[0] - arrow[0] * 3.0, p[1]] : [p[0], p[1] - arrow[1] * 3.0]
+                cv.circle(c, 2.2, '#FFFFFF', CUT_RED, 0.3)
+                cv.text(sec['label'], c[0], c[1], 2.6, 0, CUT_RED)
+              end
+            end
+          end
         end
 
         def caption(cv, name, scale, cx, cy)

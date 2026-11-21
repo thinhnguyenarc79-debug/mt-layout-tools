@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "1c143a79e89f73c53a43221793aec29baceb6c3af0f4c4c0dbdd119f04583b04",
-  "notes": "Sửa trang trắng với Group nhiều chi tiết: bỏ giới hạn 6000 cạnh; đọc hình học theo ComponentDefinition (cache) + ma trận tích luỹ; khử nét khuất dùng lưới không gian, 3 mức dự phòng; chạy chia lát có tiến trình và nút Huỷ; lỗi một hình chiếu không làm mất hình khác; log chẩn đoán."
+  "sha256": "5ef1fa63ab8645c2b5af16fc522fbb291c0caaf6de8728b70beeefb997ccf018",
+  "notes": "Mặt cắt thật A-A/B-B/C-C: giao mặt phẳng với hình học model, nét cắt đậm, hatch, khử nét phần nhìn thấy, DIM; ký hiệu đường cắt + mũi tên trên mặt đứng/mặt bằng; tự đề xuất vị trí cắt từ cấu tạo; sửa/thêm/xoá, kéo đường cắt trên giấy để cập nhật."
 }

@@ -8,6 +8,7 @@ require_relative 'core/geometry'
 require_relative 'core/extractor'
 require_relative 'core/canvas'
 require_relative 'core/dimension_engine'
+require_relative 'core/section_engine'
 require_relative 'core/sheet'
 require_relative 'core/model_scanner'
 require_relative 'core/project_store'
@@ -305,11 +306,13 @@ module MTDesign
         end
 
         def page_output(project, pg, fmt, job)
+          @views ||= {}
           pw, ph = Sheet.paper(project['paper'])
           cv = Canvas.new(fmt, pw, ph)
           tb = project['tb'].merge('sheet_name' => pg['name'], 'sheet_no' => pg['sheet_no'])
           notes = []
           failed = []
+          extent = nil
           views = []
           mats = []
           begin
@@ -319,6 +322,10 @@ module MTDesign
             end
             cap, ckey = capture_for(pg, project, job)
             mats = cap.materials.values
+            extent = cap.stats['extent'] ||= begin
+              pts = cap.edges.flatten(1)
+              (0..2).map { |k| pts.map { |p| p[k] }.minmax.map { |n| n.round(1) } }
+            end
             pg['views'].each do |k|
               job.progress("#{pg['sheet_no']}: dựng #{Geometry::VIEWS[k][0].downcase}", nil)
               begin
@@ -342,6 +349,40 @@ module MTDesign
                 log("VIEW #{k} THẤT BẠI pid=#{pg['pid']}: #{e.class}: #{e.message}\n  #{Array(e.backtrace).first(10).join("\n  ")}")
               end
             end
+            # Mặt cắt: lần dựng đầu (sections = nil) tự đề xuất từ cấu tạo đo được trên mặt đứng.
+            if pg['sections'].nil?
+              begin
+                pg['sections'] = SectionEngine.suggest(view_for(cap, ckey, 'front', job))
+                log("SECTIONS đề xuất #{pg['sheet_no']}: #{pg['sections'].inspect}")
+              rescue Job::Cancelled
+                raise
+              rescue StandardError => e
+                pg['sections'] = []
+                notes << "Không đề xuất được vị trí cắt: #{e.message}"
+                log("SECTIONS lỗi #{pg['sheet_no']}: #{e.class}: #{e.message}\n  #{Array(e.backtrace).first(8).join("\n  ")}")
+              end
+            end
+            pg['sections'].each do |sec|
+              job.progress("#{pg['sheet_no']}: dựng mặt cắt #{sec['label']}-#{sec['label']}", nil)
+              begin
+                vkey = "#{ckey}|sec|#{sec['axis']}|#{sec['pos']}|#{sec['dir']}|#{sec['label']}"
+                @views[vkey] ||= begin
+                  sv = SectionEngine.project(cap, sec, job)
+                  st = sv[:stats]
+                  log("SECTION #{sec['label']} #{sec['axis']}=#{sec['pos']} dir=#{sec['dir']}: nét cắt=#{st['cut_segments']} " \
+                      "vòng kín=#{st['cut_loops']} nét=#{st['lines']} mức=#{st['level']} #{st['seconds']}s")
+                  sv
+                end
+                views << @views[vkey]
+                notes.concat(@views[vkey][:notes])
+              rescue Job::Cancelled
+                raise
+              rescue StandardError => e
+                failed << SectionEngine.key(sec)
+                notes << "MẶT CẮT #{sec['label']}-#{sec['label']}: lỗi – #{e.message}"
+                log("SECTION #{sec['label']} THẤT BẠI: #{e.class}: #{e.message}\n  #{Array(e.backtrace).first(10).join("\n  ")}")
+              end
+            end
           rescue Job::Cancelled
             raise
           rescue ArgumentError => e
@@ -353,6 +394,8 @@ module MTDesign
           info['failed'] = failed
           info['complete'] = !views.empty? && failed.empty? && views.all? { |v| v[:level] == 1 }
           info['levels'] = views.map { |v| [v[:key], v[:level]] }.to_h
+          info['sections'] = pg['sections']
+          info['extent'] = extent ? { 'x' => extent[0], 'y' => extent[1], 'z' => extent[2] } : nil
           [fmt == :svg ? cv.svg : cv.content, info]
         end
 

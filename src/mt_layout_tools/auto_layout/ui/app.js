@@ -158,6 +158,7 @@
   function badPages() { return S.project.pages.filter(function (p) { return STATUS[(S.status || {})[p.id]]; }); }
 
   function renderPageProps() {
+    renderSections();
     var p = page(), box = $('propPage');
     box.querySelectorAll('input,select,button').forEach(function (e) { e.disabled = !p; });
     if (!p) return;
@@ -180,6 +181,58 @@
       snapshot(); delete page().offsets[S.sel]; changed();
     };
   }
+
+  // ---------------- mặt cắt ----------------
+  var AXIS = { x: 'Cắt đứng theo chiều rộng (X)', z: 'Cắt ngang theo cao độ (Z)', y: 'Cắt song song mặt trước (Y)' };
+  var DIRS = { x: [[1, '→ nhìn sang +X'], [-1, '← nhìn sang -X']], z: [[-1, '↓ nhìn xuống'], [1, '↑ nhìn lên']],
+               y: [[1, 'nhìn từ trước ra sau'], [-1, 'nhìn từ sau ra trước']] };
+  function renderSections() {
+    var p = page(), box = $('secList');
+    if (!p) { box.innerHTML = ''; return; }
+    var list = p.sections || [];
+    box.innerHTML = list.length ? list.map(function (sc, i) {
+      return '<div class="sec" data-i="' + i + '"><div class="hd"><span class="lb">' + sc.label + '-' + sc.label + '</span>' +
+        (sc.auto ? '<span class="auto">(đề xuất)</span>' : '') + '<button class="del" title="Xoá đường cắt">✕</button></div>' +
+        '<select class="ax">' + Object.keys(AXIS).map(function (k) { return '<option value="' + k + '"' + (k === sc.axis ? ' selected' : '') + '>' + AXIS[k] + '</option>'; }).join('') + '</select>' +
+        '<div class="row"><div><label>Vị trí (mm)</label><input class="pos" type="number" step="1" value="' + sc.pos + '"></div>' +
+        '<div><label>Hướng nhìn</label><select class="dir">' + DIRS[sc.axis].map(function (d) { return '<option value="' + d[0] + '"' + (d[0] === sc.dir ? ' selected' : '') + '>' + d[1] + '</option>'; }).join('') + '</select></div></div></div>';
+    }).join('') : '<p class="hint">' + (p.sections == null ? 'Plugin sẽ đề xuất vị trí cắt khi dựng trang.' : 'Chưa có mặt cắt.') + '</p>';
+  }
+  function extentMid(axis) {
+    var e = S.info && S.info.extent && S.info.extent[axis];
+    return e ? Math.round((e[0] + e[1]) / 2) : 0;
+  }
+  $('secList').addEventListener('change', function (e) {
+    var row = e.target.closest('.sec'); if (!row) return;
+    var p = page(), sc = p.sections[+row.dataset.i];
+    snapshot();
+    if (e.target.classList.contains('ax')) { sc.axis = e.target.value; sc.dir = DIRS[sc.axis][0][0]; sc.pos = extentMid(sc.axis); }
+    if (e.target.classList.contains('pos')) sc.pos = parseFloat(e.target.value) || 0;
+    if (e.target.classList.contains('dir')) sc.dir = parseInt(e.target.value, 10);
+    sc.auto = false; renderSections(); changed();
+  });
+  $('secList').addEventListener('click', function (e) {
+    if (!e.target.classList.contains('del')) return;
+    var p = page(), i = +e.target.closest('.sec').dataset.i, sc = p.sections[i];
+    if (!window.confirm('Xoá đường cắt ' + sc.label + '-' + sc.label + ' và bản vẽ MẶT CẮT ' + sc.label + '-' + sc.label + ' liên kết?')) return;
+    snapshot(); p.sections.splice(i, 1); if (p.offsets) delete p.offsets['sec:' + sc.label];
+    renderSections(); changed();
+  });
+  $('secAdd').onclick = function () {
+    var p = page(); if (!p) return;
+    snapshot(); p.sections = p.sections || [];
+    var used = p.sections.map(function (x) { return x.label; }), lb = 'A';
+    while (used.indexOf(lb) >= 0 && lb < 'Z') lb = String.fromCharCode(lb.charCodeAt(0) + 1);
+    if (used.indexOf(lb) >= 0) { msg('Đã đủ 26 mặt cắt.', 'err'); return; }
+    p.sections.push({ label: lb, axis: 'x', pos: extentMid('x'), dir: 1, auto: false });
+    renderSections(); changed();
+  };
+  $('secAuto').onclick = function () {
+    var p = page(); if (!p) return;
+    if (p.sections && p.sections.length && !window.confirm('Thay các mặt cắt hiện có bằng vị trí plugin đề xuất?')) return;
+    snapshot(); (p.sections || []).forEach(function (x) { if (p.offsets) delete p.offsets['sec:' + x.label]; });
+    p.sections = null; renderSections(); changed();
+  };
 
   // ---------------- trang & dựng ----------------
   function openPage(id) {
@@ -204,6 +257,8 @@
     paper.innerHTML = svg;
     var p = page();
     if (p && info.offsets) p.offsets = info.offsets; // đồng bộ vị trí đã kẹp trong vùng vẽ
+    if (p && info.sections && p.sections == null) p.sections = info.sections; // nhận vị trí cắt plugin đề xuất
+    renderSections();
     var svgEl = paper.querySelector('svg');
     svgEl.removeAttribute('width'); svgEl.removeAttribute('height');
     svgEl.querySelectorAll('g.view').forEach(function (g) {
@@ -259,6 +314,11 @@
     zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
   }, { passive: false });
   $('stage').addEventListener('mousedown', function (e) {
+    var mk = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.secmark');
+    if (mk) {
+      drag = { mode: 'sec', g: mk, label: mk.getAttribute('data-sec'), axis: mk.getAttribute('data-axis'), x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+      e.preventDefault(); e.stopPropagation(); return;
+    }
     var g = e.target.closest && e.target.closest('g.view');
     if (e.button === 1 || S.tool === 'pan' || spaceDown || !g) {
       if (e.button === 1 || S.tool === 'pan' || spaceDown) {
@@ -276,6 +336,9 @@
     if (!drag) return;
     if (drag.mode === 'pan') {
       S.panX = drag.px + e.clientX - drag.x; S.panY = drag.py + e.clientY - drag.y; applyView();
+    } else if (drag.mode === 'sec') {
+      drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
+      drag.g.setAttribute('transform', drag.axis === 'x' ? 'translate(' + drag.dx + ' 0)' : 'translate(0 ' + drag.dy + ')');
     } else {
       drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
       drag.g.setAttribute('transform', 'translate(' + drag.dx + ' ' + drag.dy + ')');
@@ -284,6 +347,16 @@
   window.addEventListener('mouseup', function () {
     if (!drag) return;
     var d = drag; drag = null; $('stage').classList.remove('panning');
+    if (d.mode === 'sec') {
+      var moved = d.axis === 'x' ? d.dx : d.dy;
+      if (Math.abs(moved) < 0.2 || !S.info) return;
+      var sc = (page().sections || []).filter(function (x) { return x.label === d.label; })[0]; if (!sc) return;
+      snapshot();
+      // giấy -> mm thật: X theo chiều ngang; Z (mặt đứng) và Y (mặt bằng) ngược chiều trục giấy
+      sc.pos = Math.round((sc.pos + (d.axis === 'x' ? d.dx : -d.dy) * S.info.scale) * 10) / 10;
+      sc.auto = false; renderSections(); changed(); requestRender(true);
+      return;
+    }
     if (d.mode === 'move' && (Math.abs(d.dx) > 0.3 || Math.abs(d.dy) > 0.3)) {
       snapshot();
       var p = page(); p.offsets = p.offsets || {};

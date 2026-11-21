@@ -163,8 +163,9 @@ module MTDesign
 
         # ---------------- chiếu 1 hình ----------------
         # Trả về { key, name, lines, fills, w, h, dims, level, notes, stats }.
-        def project(cap, key, job = nil, budget = [BUDGET_L1, BUDGET_L2])
-          title, fn = VIEWS.fetch(key)
+        # vdef: [tên, phép chiếu] cho hình tuỳ biến (mặt cắt); mặc định lấy theo key trong VIEWS.
+        def project(cap, key, job = nil, budget = [BUDGET_L1, BUDGET_L2], vdef = nil)
+          title, fn = vdef || VIEWS.fetch(key)
           clock = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
           t_start = clock.call
           notes = []
@@ -275,7 +276,7 @@ module MTDesign
           stats['lines'] = lines.length
           stats['seconds'] = (clock.call - t_start).round(2)
           { key: key, name: title, lines: lines, fills: fills, w: w, h: h, dims: key != 'iso',
-            level: level, notes: notes, stats: stats }
+            level: level, notes: notes, stats: stats, origin: [l, t], fn: fn }
         end
 
         def visible_parts(seg, tris, grid, stamp, sid)

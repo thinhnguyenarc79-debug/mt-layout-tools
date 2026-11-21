@@ -67,3 +67,11 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 #propView table { width: 100%; border-collapse: collapse; }
 #propView td { padding: 3px 0; border-bottom: 1px solid #ebe9e1; }
 #propView td:first-child { color: #7a817c; width: 45%; }
+
+.sec { border: 1px solid #d6d3c8; border-radius: 3px; padding: 6px; margin-bottom: 6px; background: #fff; }
+.sec .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.sec .lb { font-weight: 700; color: #C0392B; min-width: 44px; }
+.sec .auto { font-size: 10px; color: #8a8f8b; }
+.sec .hd button { margin-left: auto; padding: 1px 7px; color: #b3261e; }
+#paper g.secmark { cursor: ew-resize; }
+#paper g.secmark[data-axis="z"], #paper g.secmark[data-axis="y"] { cursor: ns-resize; }
