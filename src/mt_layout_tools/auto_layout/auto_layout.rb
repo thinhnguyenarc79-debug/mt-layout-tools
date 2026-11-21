@@ -9,6 +9,8 @@ require_relative 'core/extractor'
 require_relative 'core/canvas'
 require_relative 'core/dimension_engine'
 require_relative 'core/section_engine'
+require_relative 'core/annotation_engine'
+require_relative 'core/detail_engine'
 require_relative 'core/sheet'
 require_relative 'core/model_scanner'
 require_relative 'core/project_store'
@@ -383,6 +385,21 @@ module MTDesign
                 log("SECTION #{sec['label']} THẤT BẠI: #{e.class}: #{e.message}\n  #{Array(e.backtrace).first(10).join("\n  ")}")
               end
             end
+            # Chi tiết phóng to: dựng từ hình nguồn đã có trên trang.
+            pg['details'].each do |det|
+              src = views.find { |vv| vv[:key] == det['src'] }
+              unless src
+                notes << "CHI TIẾT #{det['n']}: hình nguồn #{det['src']} không còn trên trang."
+                next
+              end
+              begin
+                views << DetailEngine.build(src, det)
+              rescue StandardError => e
+                failed << DetailEngine.key(det)
+                notes << e.message
+                log("DETAIL #{det['n']} lỗi: #{e.class}: #{e.message}")
+              end
+            end
           rescue Job::Cancelled
             raise
           rescue ArgumentError => e
@@ -395,6 +412,7 @@ module MTDesign
           info['complete'] = !views.empty? && failed.empty? && views.all? { |v| v[:level] == 1 }
           info['levels'] = views.map { |v| [v[:key], v[:level]] }.to_h
           info['sections'] = pg['sections']
+          info['materials'] = mats.map { |m| m['name'] }
           info['extent'] = extent ? { 'x' => extent[0], 'y' => extent[1], 'z' => extent[2] } : nil
           [fmt == :svg ? cv.svg : cv.content, info]
         end

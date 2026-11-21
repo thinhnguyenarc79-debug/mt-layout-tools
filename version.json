@@ -1,7 +1,7 @@
 {
-  "version": "2.2.0",
+  "version": "2.3.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "5ef1fa63ab8645c2b5af16fc522fbb291c0caaf6de8728b70beeefb997ccf018",
-  "notes": "Mặt cắt thật A-A/B-B/C-C: giao mặt phẳng với hình học model, nét cắt đậm, hatch, khử nét phần nhìn thấy, DIM; ký hiệu đường cắt + mũi tên trên mặt đứng/mặt bằng; tự đề xuất vị trí cắt từ cấu tạo; sửa/thêm/xoá, kéo đường cắt trên giấy để cập nhật."
+  "sha256": "2db7ead9ba9977d0042e2b563fe9516f88f7137197836a63ec733a255a548929",
+  "notes": "Chú thích Text / nhiều dòng / Leader / ghi chú vật liệu (sửa nội dung, cỡ chữ, màu, mũi tên, layer; kéo dời; Undo; xuất PDF/SVG). Chi tiết phóng to: khoanh vùng trên hình chiếu hoặc mặt cắt, tỉ lệ riêng, nét & hatch & DIM thật."
 }

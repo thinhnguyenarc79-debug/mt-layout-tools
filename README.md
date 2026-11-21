@@ -54,10 +54,13 @@ tools/build_rbz.py                        đóng gói + version.json
 | Tự chọn tỉ lệ, xếp nhiều hàng, kẹp không đè khung tên | ✅ |
 | Editor: zoom/pan, chọn & kéo hình chiếu, undo/redo, nhiều trang | ✅ |
 | Lưu dự án (SKP / JSON), xuất PDF nhiều trang, SVG | ✅ |
-| Mặt cắt A-A có hatch | ⏳ Giai đoạn 2 |
+| Mặt cắt thật A-A/B-B/C-C (giao mặt phẳng × hình học, nét cắt, hatch, DIM, ký hiệu + mũi tên, đề xuất vị trí, kéo đường cắt) | ✅ v2.2 |
+| Chú thích: Text, nhiều dòng, Leader, ghi chú vật liệu (chọn từ vật liệu có trong model), layer ẩn/hiện | ✅ v2.3 |
+| Chi tiết phóng to (khoanh vùng trên hình chiếu/mặt cắt, tỉ lệ riêng, DIM, hatch) | ✅ v2.3 |
+| Model lớn: cache definition, lưới không gian, 3 mức dự phòng, tiến trình + Huỷ, log | ✅ v2.1 |
 | Nét đứt cho cạnh khuất, phân cấp nét bao/cấu tạo, đường trục | ⏳ Giai đoạn 2 |
 | Nhận diện bộ phận tủ (cánh, vách, đợt…), gán thủ công | ⏳ Giai đoạn 2 |
-| Công cụ vẽ 2D (line, rect, text, leader, hatch, dim tay), layer | ⏳ Giai đoạn 4 |
+| Công cụ vẽ 2D còn lại (line, rect, circle, dim tay, hatch tay) | ⏳ Giai đoạn 4 |
 | DXF, PNG; DWG/LayOut (cần kiểm tra API) | ⏳ Giai đoạn 3 |
 | Đồng bộ tự phát hiện thay đổi, hàng loạt có tiến trình/huỷ | ⏳ Giai đoạn 4 |
 

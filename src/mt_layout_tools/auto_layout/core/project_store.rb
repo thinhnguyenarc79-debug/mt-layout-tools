@@ -80,8 +80,11 @@ module MTDesign
             'sheet_no' => str(pg['sheet_no'], 40),
             'root' => pg['root'] != false, # trang cũ (v1) mặc định coi như tạo từ đối tượng ở gốc model
             'sections' => clean_sections(pg['sections']),
+            'notes' => AnnotationEngine.clean(pg['notes']),
+            'details' => DetailEngine.clean(pg['details']),
+            'hidden_layers' => Array(pg['hidden_layers']).map { |x| str(x, 60) }.uniq.first(50),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
-              next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\Asec:[A-Z]\z/) && v.is_a?(Array) && v.length == 2
+              next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2})\z/) && v.is_a?(Array) && v.length == 2
 
               h[k.to_s] = v.map { |n| n.to_f.clamp(-2000, 2000) }
             end

@@ -13,6 +13,13 @@
       <button data-tool="select" class="tool on" title="Chọn / kéo hình chiếu (V)">⬚ Chọn</button>
       <button data-tool="pan" class="tool" title="Kéo màn hình (H) – hoặc giữ chuột giữa">✋ Kéo</button>
     </span>
+    <span class="grp" title="Chú thích">
+      <button data-tool="text" class="tool" title="Text: bấm vào giấy để đặt chữ (T)">T Text</button>
+      <button data-tool="mtext" class="tool" title="Ghi chú nhiều dòng: bấm vào giấy">¶ Nhiều dòng</button>
+      <button data-tool="leader" class="tool" title="Leader: bấm điểm mũi tên, rồi bấm vị trí chữ (L)">↖ Leader</button>
+      <button data-tool="material" class="tool" title="Ghi chú vật liệu: bấm điểm mũi tên, rồi vị trí chữ; chọn vật liệu có trong model">▣ Vật liệu</button>
+      <button data-tool="detail" class="tool" title="Chi tiết phóng to: kéo khung trên một hình chiếu/mặt cắt (D)">⊡ Chi tiết</button>
+    </span>
     <span class="grp">
       <button id="zout" title="Thu nhỏ">−</button><button id="zfit" title="Vừa khung (F)">Vừa khung</button><button id="zin" title="Phóng to">+</button>
     </span>
@@ -135,6 +142,11 @@
       <div class="btns"><button id="secAdd">+ Thêm mặt cắt</button><button id="secAuto" title="Plugin đề xuất lại vị trí cắt từ cấu tạo đo được">Đề xuất lại</button></div>
       <p class="hint">Kéo đường cắt đỏ trên mặt đứng/mặt bằng để dời vị trí; bản vẽ mặt cắt cập nhật theo.</p>
     </div>
+    <h3>Chú thích</h3>
+    <div class="body" id="noteBox"><p class="hint">Chọn công cụ Text / Leader / Vật liệu trên thanh trên rồi bấm lên giấy. Bấm vào chú thích để sửa; kéo để dời; phím Delete để xoá.</p></div>
+    <div class="body" id="layerBox"></div>
+    <h3>Chi tiết phóng to</h3>
+    <div class="body" id="detBox"></div>
     <h3>Hình chiếu đang chọn</h3>
     <div id="propView" class="body"><p class="hint">Bấm vào một hình chiếu trên giấy để chọn; kéo để di chuyển.</p></div>
   </aside>

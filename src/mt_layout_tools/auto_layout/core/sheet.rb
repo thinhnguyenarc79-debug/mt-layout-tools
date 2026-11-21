@@ -35,12 +35,17 @@ module MTDesign
         end
 
         # ---------- bố cục ----------
+        # Hình chi tiết có tỉ lệ riêng (fixed_scale); các hình khác theo tỉ lệ chung của tờ.
+        def sc(v, s)
+          v[:fixed_scale] || s
+        end
+
         def box_w(v, s)
-          v[:w] / s + (v[:dims] ? M_LEFT + M_RIGHT : 4)
+          v[:w] / sc(v, s) + (v[:dims] ? M_LEFT + M_RIGHT : 4)
         end
 
         def box_h(v, s)
-          v[:h] / s + (v[:dims] ? M_TOP : 4) + M_BOTTOM
+          v[:h] / sc(v, s) + (v[:dims] ? M_TOP : 4) + M_BOTTOM
         end
 
         def layout_size(rows, s)
@@ -102,7 +107,7 @@ module MTDesign
           legend = mats.first(14)
           legend_h = legend.empty? ? 0 : legend.length * 4.2 + 2
           ah = area[3] - area[1] - legend_h
-          info = { 'note' => nil, 'boxes' => {}, 'offsets' => {} }
+          info = { 'note' => nil, 'boxes' => {}, 'offsets' => {}, 'frames' => {} }
           if views.empty?
             info['scale'] = page['scale'].to_i.positive? ? page['scale'].to_i : 20
             info['note'] = 'Trang chưa có hình chiếu nào.'
@@ -136,6 +141,7 @@ module MTDesign
             end
           end
           draw_legend(cv, legend, area)
+          AnnotationEngine.draw(cv, page['notes'], Array(page['hidden_layers']))
           draw_frame(cv, frame, tb_x)
           draw_title_block(cv, tb, info['scale'], frame, tb_x)
           info
@@ -175,29 +181,73 @@ module MTDesign
             info['offsets'][v[:key]] = [dx.round(2), dy.round(2)]
             info['boxes'][v[:key]] = [bx + dx, by + dy, bw, bh].map { |n| n.round(2) }
             cv.group('class' => 'view', 'data-key' => v[:key]) do
-              draw_view(cv, v, s, x + dx, base + dy, page)
+              info['frames'][v[:key]] = draw_view(cv, v, s, x + dx, base + dy, page)
             end
           end
         end
 
         def draw_view(cv, v, s, x, base, page)
+          s = sc(v, s)
           ox = x + (v[:dims] ? M_LEFT : 2)
           vw, vh = v[:w] / s, v[:h] / s
           oy = base - vh
           tf = ->(p) { [ox + p[0] / s, oy + p[1] / s] }
-          v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
-          chain(v[:lines].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.25, INK) }
-          if v[:cut]
-            loops = v[:cut][:loops].map { |lp| lp.map(&tf) }
-            SectionEngine.hatch(loops).each { |a, b| cv.line(a, b, 0.13, HATCH) }
-            chain(v[:cut][:segs].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.5, INK) }
+          if v[:detail]
+            draw_detail(cv, v, s, ox, oy, page)
+          else
+            v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
+            chain(v[:lines].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.25, INK) }
+            draw_cut(cv, v, tf)
+            section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
+            detail_marks(cv, v, tf, s, page['details'])
           end
-          section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
           DimensionEngine.draw(cv, v, s, ox, oy, page) if v[:dims] && page.fetch('dims', true)
           caption(cv, v[:name], "TL 1:#{s}", ox + vw / 2, base + 6.5)
-          return unless v[:level].to_i >= 3
+          cv.text('BẢN XEM TRƯỚC – CHƯA KHỬ ĐỦ NÉT KHUẤT', ox + vw / 2, base + 13.5, 2.2, 0, '#B3261E') if v[:level].to_i >= 3
+          [ox, oy, s, v[:w], v[:h]].map { |n| n.round(4) }
+        end
 
-          cv.text('BẢN XEM TRƯỚC – CHƯA KHỬ ĐỦ NÉT KHUẤT', ox + vw / 2, base + 13.5, 2.2, 0, '#B3261E')
+        def draw_cut(cv, v, tf)
+          return unless v[:cut]
+
+          loops = v[:cut][:loops].map { |lp| lp.map(&tf) }
+          SectionEngine.hatch(loops).each { |a, b| cv.line(a, b, 0.13, HATCH) }
+          chain(v[:cut][:segs].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.5, INK) }
+        end
+
+        # Vẽ lại vùng khoanh của hình nguồn ở tỉ lệ chi tiết (màu, nét, nét cắt, hatch thật), có khung.
+        def draw_detail(cv, v, s, ox, oy, page)
+          src = v[:detail][:src]
+          x0, y0 = v[:detail][:rect]
+          tf = ->(p) { [ox + (p[0] - x0) / s, oy + (p[1] - y0) / s] }
+          vw, vh = v[:w] / s, v[:h] / s
+          cv.clip(ox, oy, vw, vh) do
+            src[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
+            chain(v[:lines].map { |a, b| [[ox + a[0] / s, oy + a[1] / s], [ox + b[0] / s, oy + b[1] / s]] })
+              .each { |pl| cv.polyline(pl, 0.3, INK) }
+            draw_cut(cv, src, tf)
+          end
+          cv.rect(ox, oy, vw, vh, nil, '#8A8F8B', 0.2)
+        end
+
+        # Ký hiệu vùng khoanh chi tiết trên hình nguồn: khung nét đứt + số chi tiết.
+        def detail_marks(cv, v, tf, _s, details)
+          Array(details).each do |d|
+            next unless d['src'] == v[:key]
+
+            x0, y0, x1, y1 = d['rect']
+            a = tf.call([x0, y0])
+            b = tf.call([x1, y1])
+            cv.group('class' => 'detmark', 'data-det' => d['n']) do
+              cv.line([a[0], a[1]], [b[0], a[1]], 0.25, CUT_RED, [1.5, 0.8])
+              cv.line([b[0], a[1]], [b[0], b[1]], 0.25, CUT_RED, [1.5, 0.8])
+              cv.line([b[0], b[1]], [a[0], b[1]], 0.25, CUT_RED, [1.5, 0.8])
+              cv.line([a[0], b[1]], [a[0], a[1]], 0.25, CUT_RED, [1.5, 0.8])
+              c = [b[0] + 2.2, a[1] - 2.2]
+              cv.circle(c, 2.0, '#FFFFFF', CUT_RED, 0.3)
+              cv.text(d['n'].to_s, c[0], c[1], 2.4, 0, CUT_RED)
+            end
+          end
         end
 
         # Nối các đoạn chung đầu mút thành đường gấp khúc rồi rút gọn điểm (sai lệch < 0,02 mm trên giấy).
