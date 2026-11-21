@@ -182,7 +182,14 @@ module MTDesign
               v = pr.result
               l, t = v[:origin]
               if variant == :all && @doors.any? && %w[front back].include?(k)
-                v[:door_boxes] = cap.door_boxes(v[:fn]).map { |d| b = d['box']; [b[0] - l, b[1] - l, b[2] - t, b[3] - t] }
+                db = cap.door_boxes(v[:fn])
+                v[:door_boxes] = db.map { |d| b = d['box']; [b[0] - l, b[1] - l, b[2] - t, b[3] - t] }
+                # cánh kèm đường dẫn instance ổn định – để vẽ ký hiệu hướng mở & bấm chọn trên giấy
+                v[:door_items] = db.map do |d|
+                  b = d['box']
+                  { 'path' => cap.doors[d['id']]['path'], 'name' => d['name'],
+                    'box' => [b[0] - l, b[1] - l, b[2] - t, b[3] - t].map { |n| n.round(2) } }
+                end
               end
               if %w[front open].include?(k)
                 # mốc DIM theo bộ phận đã phân loại (chỉ bộ phận còn hiện trong hình này)
@@ -339,11 +346,25 @@ module MTDesign
             @notes.unshift(@fatal) if @fatal
             @pw, @ph = Sheet.paper(@project['paper'])
             @pg['has_detail_view'] = @views.any? { |v| v[:key] == 'open' || v[:cut] }
+            apply_view_props
             sheets = Sheet.paginate(@views, @mats, @pg, @pw, @ph)
             @outputs = Array.new(sheets.length)
             @base_code = @numbering.call(@pg, sheets.length)
             steps = sheets.each_with_index.flat_map { |(group, forced, note), i| sheet_tasks(i, sheets.length, group, forced, note) }
             job.insert_next(steps)
+          end
+        end
+
+        # Tỉ lệ riêng từng hình (page['view_props']): gán v[:fixed_scale] trước khi chia tờ.
+        # Hình đã lưu trong cache được gán lại mỗi lần dựng (bỏ tỉ lệ riêng -> về tỉ lệ trang / tỉ lệ chi tiết).
+        def apply_view_props
+          props = @pg['view_props'] || {}
+          @views.each do |v|
+            v[:own_scale] = v[:fixed_scale] unless v.key?(:own_scale)
+            vp = props[v[:key]]
+            v[:fixed_scale] = (vp && vp['scale_override']) || v[:own_scale]
+            v[:scale_locked] = vp ? vp['scale_locked'] == true : false
+            v[:position_locked] = vp ? vp['position_locked'] == true : false
           end
         end
 
@@ -389,6 +410,9 @@ module MTDesign
             end
             info['parts_total'] = Array(@parts).length
             info['missing_roles'] = Array(@missing)
+            info['door_items'] = group.select { |v| v[:door_items] }.map { |v| [v[:key], v[:door_items]] }.to_h
+            info['view_props'] = @pg['view_props'] || {}
+            info['view_keys'] = group.map { |v| v[:key] }
             info['sheet'] = idx
             info['sheets'] = total
             info['code'] = no

@@ -94,6 +94,10 @@ module MTDesign
             'dimtext' => clean_dimtext(pg['dimtext']),
             'front_dims' => %w[auto exterior interior].include?(pg['front_dims'].to_s) ? pg['front_dims'].to_s : 'auto',
             'dimoff' => clean_dimoff(pg['dimoff']),
+            # tỉ lệ riêng / khóa tỉ lệ / khóa vị trí từng hình: { key => {scale_override, scale_locked, position_locked} }
+            'view_props' => clean_view_props(pg['view_props']),
+            # ký hiệu hướng mở cánh (người dùng chọn): { "pid/pid" => {type, hinge, slide, open, style, visible} }
+            'door_symbols' => DoorSymbols.clean(pg['door_symbols']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
               next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2})\z/) && v.is_a?(Array) && v.length == 2
 
@@ -121,6 +125,10 @@ module MTDesign
             base = project['defaults'].merge('pid' => pid, 'name' => found['name'], 'root' => found['root'] != false,
                                              'offsets' => {})
             if old
+              # dựng lại trang: giữ ký hiệu cánh và các hình đã KHÓA (tỉ lệ / vị trí) – không tự mở khóa
+              keep = (old['view_props'] || {}).select { |_k, vp| vp['scale_locked'] || vp['position_locked'] }
+              base = base.merge('view_props' => keep, 'door_symbols' => old['door_symbols'] || {},
+                                'offsets' => (old['offsets'] || {}).select { |k, _| keep[k] && keep[k]['position_locked'] })
               fresh = clean_page(base.merge('id' => old['id'], 'sheet_no' => old['sheet_no']))
               project['pages'][project['pages'].index(old)] = fresh
               res['replaced'] << fresh['id']
@@ -199,6 +207,31 @@ module MTDesign
                      .transform_values { |n| n.to_f.clamp(-60, 60).round(2) }
             h[k.to_s] = sides unless sides.empty?
           end
+        end
+
+        VIEW_PROP_KEY = /\A([a-z]+|sec:[A-Z]|det:\d{1,2})\z/.freeze
+
+        # Hình khóa tỉ lệ luôn có scale_override (khóa = giữ đúng tỉ lệ đang dùng). Không bao giờ tự mở khóa.
+        def clean_view_props(raw)
+          return {} unless raw.is_a?(Hash)
+
+          raw.first(80).each_with_object({}) do |(k, v), h|
+            next unless v.is_a?(Hash) && k.to_s =~ VIEW_PROP_KEY
+
+            sc = v['scale_override'].to_i
+            sc = nil unless sc.between?(1, 500)
+            locked = v['scale_locked'] == true && !sc.nil?
+            pos = v['position_locked'] == true
+            next if sc.nil? && !pos
+
+            h[k.to_s] = { 'scale_override' => sc, 'scale_locked' => locked, 'position_locked' => pos }
+          end
+        end
+
+        # Tỉ lệ hiệu lực của 1 hình: tỉ lệ riêng nếu có, ngược lại tỉ lệ mặc định của trang (0 = tự động).
+        def effective_scale(page, key)
+          vp = (page['view_props'] || {})[key]
+          vp && vp['scale_override'] ? vp['scale_override'] : page['scale'].to_i
         end
 
         # nil = chưa có -> plugin tự đề xuất ở lần dựng đầu; [] = người dùng đã xoá hết.

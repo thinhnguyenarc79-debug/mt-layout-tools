@@ -105,3 +105,25 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 #partList .src { font-size: 10px; color: #8a8f8b; }
 #partList .src.sug { color: #c0772b; }
 #partList .it .nm { font-size: 11px; }
+
+/* v2.6: menu chuột phải hình chiếu, tỉ lệ riêng, khóa, ký hiệu cánh */
+.ctx { position: fixed; z-index: 50; min-width: 230px; background: #fff; border: 1px solid #cfccbf; border-radius: 6px;
+  box-shadow: 0 6px 22px rgba(0,0,0,.18); padding: 4px 0; font-size: 12px; }
+.ctx .hd { padding: 5px 12px; font-weight: 600; color: #2f3a33; border-bottom: 1px solid #eee; }
+.ctx .hd small { font-weight: 400; color: #8a8f8b; margin-left: 6px; }
+.ctx .it { padding: 5px 12px; cursor: pointer; white-space: nowrap; }
+.ctx .it:hover { background: #f3efe2; }
+.ctx .it.off { color: #b5b5b0; cursor: default; background: none; }
+.ctx .it.on::before { content: '✓ '; color: #C9A45C; }
+.ctx .sep { border-top: 1px solid #eee; margin: 3px 0; }
+.ctx .lb { padding: 4px 12px 2px; color: #8a8f8b; font-size: 11px; }
+.ctx .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; padding: 2px 10px 4px; }
+.ctx .grid span { text-align: center; padding: 3px 0; border: 1px solid #e3e0d4; border-radius: 4px; cursor: pointer; }
+.ctx .grid span:hover { background: #f3efe2; }
+.ctx .grid span.on { background: #C9A45C; color: #fff; border-color: #C9A45C; }
+.ctx .grid.off span { color: #b5b5b0; cursor: default; background: none; }
+#paper g.edonly { pointer-events: none; }
+#symList .it { display: flex; align-items: center; gap: 4px; }
+#symList .it .nm { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#symList .it select { width: 120px; padding: 2px; font-size: 11px; }
+#propView select { width: 100%; }

@@ -35,9 +35,20 @@ module MTDesign
         end
 
         # ---------- bố cục ----------
-        # Hình chi tiết có tỉ lệ riêng (fixed_scale); các hình khác theo tỉ lệ chung của tờ.
+        # Tỉ lệ hiệu lực của 1 hình: tỉ lệ riêng (scale_override / chi tiết) nếu có, ngược lại theo tỉ lệ tờ.
+        # PageBuild gán v[:fixed_scale] từ page['view_props'][key]['scale_override'] trước khi dàn trang.
         def sc(v, s)
           v[:fixed_scale] || s
+        end
+
+        # Tỉ lệ hiện trong khung tên: 1 tỉ lệ nếu mọi hình cùng tỉ lệ, ngược lại "THEO HÌNH".
+        def scale_label(views, s)
+          all = views.map { |v| sc(v, s) }.uniq
+          all.length == 1 ? "1:#{all[0]}" : 'THEO HÌNH'
+        end
+
+        def lock_text(v)
+          v[:scale_locked] ? 'đã khóa' : 'tỉ lệ riêng'
         end
 
         def box_w(v, s)
@@ -115,19 +126,28 @@ module MTDesign
         # Giữ đúng tỉ lệ người dùng chọn: nếu tất cả hình không vừa 1 tờ ở tỉ lệ đó thì chia sang nhiều tờ
         # (không thu nhỏ hình). Tỉ lệ "Tự động" -> 1 tờ, tự chọn tỉ lệ vừa khổ.
         # Trả về [[views, tỉ lệ ép | nil, ghi chú | nil], ...] – mỗi phần tử là 1 tờ.
+        # Hình có tỉ lệ riêng (v[:fixed_scale]) KHÔNG BAO GIỜ bị thu nhỏ: không vừa thì chuyển sang tờ khác;
+        # 1 hình riêng lẻ vẫn không vừa khổ -> giữ nguyên tỉ lệ và báo xung đột.
         def paginate(views, mats, page, pw, ph)
           want = page['scale'].to_i
-          return [[views, nil, nil]] if want <= 0 || views.empty?
+          return [[views, nil, nil]] if views.empty?
+
+          fixed = views.any? { |v| v[:fixed_scale] }
+          return [[views, nil, nil]] if want <= 0 && !fixed
 
           _frame, _tb, area = frames(pw, ph)
           aw = area[2] - area[0]
           legend_h = mats.first(14).empty? ? 0 : mats.first(14).length * 4.2 + 2
           ah = area[3] - area[1] - legend_h
           fits = lambda do |group|
-            pl = plan(group, want, aw, ah)
-            pl[:w] <= aw && pl[:h] <= ah
+            if want.positive?
+              pl = plan(group, want, aw, ah)
+              pl[:w] <= aw && pl[:h] <= ah
+            else
+              !pick_scale(group, aw, ah).nil?
+            end
           end
-          return [[views, want, nil]] if fits.call(views)
+          return [[views, want.positive? ? want : nil, nil]] if fits.call(views)
 
           # first-fit: mỗi hình vào tờ đầu tiên còn chỗ (giữ thứ tự hình trong từng tờ) -> ít tờ trống
           sheets = []
@@ -137,9 +157,15 @@ module MTDesign
           end
           sheets.map do |group|
             if fits.call(group)
-              [group, want, nil]
+              [group, want.positive? ? want : nil, nil]
+            elsif group.all? { |v| v[:fixed_scale] }
+              msg = group.map { |v| "#{v[:name]} (TL 1:#{v[:fixed_scale]}, #{lock_text(v)})" }.join(', ')
+              [group, want.positive? ? want : group[0][:fixed_scale],
+               "XUNG ĐỘT TỈ LỆ: #{msg} không vừa khổ giấy – giữ nguyên tỉ lệ, không thu nhỏ. Hãy chọn khổ lớn hơn hoặc đổi tỉ lệ riêng."]
             else
-              [group, nil, "#{group.map { |v| v[:name] }.join(', ')}: quá lớn cho khổ giấy ở 1:#{want}, tờ này dùng tỉ lệ tự động."]
+              free = group.reject { |v| v[:fixed_scale] }
+              [group, nil, "#{free.map { |v| v[:name] }.join(', ')}: quá lớn cho khổ giấy ở 1:#{want}, tờ này dùng tỉ lệ tự động " \
+                           '(hình có tỉ lệ riêng giữ nguyên).']
             end
           end
         end
@@ -173,6 +199,8 @@ module MTDesign
             scale = want
           end
           info['scale'] = scale
+          info['scale_label'] = scale_label(views, scale)
+          info['view_scales'] = views.map { |v| [v[:key], sc(v, scale)] }.to_h
           ctx[:scale] = scale
           ctx[:placements] = place_views(views, scale, area, ah, page, info)
           ctx
@@ -212,7 +240,7 @@ module MTDesign
           draw_legend(cv, ctx[:legend], area)
           AnnotationEngine.draw(cv, page['notes'], Array(page['hidden_layers']))
           draw_frame(cv, frame, tb_x)
-          draw_title_block(cv, tb, info['scale'], frame, tb_x)
+          draw_title_block(cv, tb, info['scale_label'] || info['scale'], frame, tb_x)
           info
         end
 
@@ -266,6 +294,7 @@ module MTDesign
             v[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
             polylines(v, tf).each { |pl| cv.polyline(pl, 0.25, INK) }
             draw_cut(cv, v, tf)
+            DoorSymbols.draw(cv, v, tf, page['door_symbols'])
             @obstacles = []
             section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
             detail_marks(cv, v, tf, s, page['details'])
@@ -607,7 +636,7 @@ module MTDesign
           cv.text('NGÀY - DATE', (x0 + mid) / 2, y + 2.6, 1.7, 0, GREY)
           cv.text('TỈ LỆ - SCALE', (mid + x1) / 2, y + 2.6, 1.7, 0, GREY)
           cv.text(o['date'].to_s, (x0 + mid) / 2, y + dh * 0.62, 2.6, 0, INK)
-          cv.text("1:#{scale}", (mid + x1) / 2, y + dh * 0.62, 2.6, 0, INK)
+          cv.text(scale.is_a?(String) ? scale : "1:#{scale}", (mid + x1) / 2, y + dh * 0.62, 2.6, 0, INK)
           y += dh
           hl.call(y)
 

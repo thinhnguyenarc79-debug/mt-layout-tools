@@ -156,6 +156,17 @@
       <div id="partList" class="list"></div>
       <p class="hint">✓ = chắc chắn (gán tay, thuộc tính, Tag, tên). "đề xuất" = suy từ hình học/vật liệu – hãy xác nhận. 👁 chọn bộ phận trong SketchUp (không đổi model). Gán tay được lưu theo đường dẫn instance khi bấm 💾 Lưu.</p>
     </div>
+    <h3>Ký hiệu cánh</h3>
+    <div class="body" id="symBox">
+      <div id="symList" class="list"></div>
+      <div class="row">
+        <div><label>Nét (mm)</label><input id="symW" type="number" min="0.05" max="1" step="0.05" value="0.18"></div>
+        <div><label>Màu</label><input id="symColor" type="color" value="#6B6F6C"></div>
+        <div><label>Kiểu nét</label><select id="symDash"><option value="dash">Nét đứt</option><option value="solid">Nét liền</option><option value="dot">Chấm</option><option value="dashdot">Gạch chấm</option></select></div>
+      </div>
+      <div class="btns"><button id="symApply">Áp kiểu nét cho mọi cánh</button></div>
+      <p class="hint">Chọn loại ký hiệu cho từng cánh – plugin không tự đoán bản lề. Bấm đúp hoặc chuột phải vào cánh trên giấy để chọn nhanh. Ký hiệu vẽ trong khung của chính cánh, đi theo tỉ lệ hình.</p>
+    </div>
     <h3>Mặt cắt</h3>
     <div class="body" id="secBox">
       <div id="secList"></div>
@@ -171,6 +182,7 @@
     <div id="propView" class="body"><p class="hint">Bấm vào một hình chiếu trên giấy để chọn; kéo để di chuyển.</p></div>
   </aside>
 </div>
+<div id="ctxMenu" class="ctx" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>

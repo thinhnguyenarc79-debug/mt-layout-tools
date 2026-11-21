@@ -188,20 +188,240 @@
     $('pgGap').value = p.min_gap; $('pgRound').value = p.round; $('pgFill').checked = p.fill; $('pgDims').checked = p.dims;
   }
 
+  // ---------------- tỉ lệ riêng / khóa từng hình chiếu (v2.6) ----------------
+  var SCALE_MENU = [5, 10, 15, 20, 25, 40, 50, 75, 100];
+  var DOOR_TYPES = { none: 'Không ký hiệu', left: 'Mở trái (bản lề trái)', right: 'Mở phải (bản lề phải)', double: 'Cánh đôi',
+    up: 'Lật lên (bản lề trên)', down: 'Lật xuống (bản lề dưới)', slide_left: 'Lùa sang trái', slide_right: 'Lùa sang phải', drawer: 'Ngăn kéo (kéo ra)' };
+  function viewName(k) {
+    if (S.viewNames[k]) return cap(S.viewNames[k]);
+    if (/^sec:/.test(k)) return 'Mặt cắt ' + k.slice(4) + '-' + k.slice(4);
+    if (/^det:/.test(k)) return 'Chi tiết ' + k.slice(4);
+    return k;
+  }
+  function vprops(k, create) {
+    var p = page(); if (!p) return null;
+    p.view_props = p.view_props || {};
+    if (!p.view_props[k] && create) p.view_props[k] = { scale_override: null, scale_locked: false, position_locked: false };
+    return p.view_props[k] || null;
+  }
+  function tidyProps(k) {
+    var p = page(), v = p && p.view_props && p.view_props[k];
+    if (v && !v.scale_override) v.scale_locked = false;
+    if (v && !v.scale_override && !v.position_locked) delete p.view_props[k];
+  }
+  function frameOf(k) { return S.info && S.info.frames && S.info.frames[k]; }
+  function effScale(k) {
+    var v = vprops(k), f = frameOf(k);
+    if (v && v.scale_override) return v.scale_override;
+    return f ? f[2] : (page() ? page().scale : 0);
+  }
+  function scaleLocked(k) { var v = vprops(k); return !!(v && v.scale_locked); }
+  function posLocked(k) { var v = vprops(k); return !!(v && v.position_locked); }
+  function setViewScale(k, sc) {
+    if (scaleLocked(k)) { msg(viewName(k) + ' đang khóa tỉ lệ 1:' + effScale(k) + ' – mở khóa trước khi đổi.', 'err'); return; }
+    snapshot();
+    if (sc) vprops(k, true).scale_override = sc;
+    else if (vprops(k)) { vprops(k).scale_override = null; tidyProps(k); }
+    changed(); requestRender(true);
+    msg(sc ? viewName(k) + ': tỉ lệ riêng 1:' + sc + ' – bố trí lại tự động, hình không vừa sẽ chuyển sang tờ khác.' : viewName(k) + ': theo tỉ lệ mặc định của trang.', 'ok');
+  }
+  function customScale(k) {
+    var v = window.prompt('Tỉ lệ riêng cho ' + viewName(k) + ' – nhập N cho 1:N', String(effScale(k) || 20));
+    if (v === null) return;
+    var n = parseInt(String(v).replace(/^1\s*:\s*/, ''), 10);
+    if (!(n >= 1 && n <= 500)) { msg('Tỉ lệ không hợp lệ (1 – 500).', 'err'); return; }
+    setViewScale(k, n);
+  }
+  function lockScale(k, on) {
+    snapshot();
+    var v = vprops(k, true);
+    if (on) { v.scale_override = v.scale_override || effScale(k); v.scale_locked = true; } else v.scale_locked = false;
+    tidyProps(k); changed(); requestRender(true);
+    msg(on ? viewName(k) + ': đã khóa tỉ lệ 1:' + v.scale_override + '.' : viewName(k) + ': đã mở khóa tỉ lệ (vẫn giữ 1:' + effScale(k) + ' cho tới khi đổi).', 'ok');
+  }
+  function lockPos(k, on) {
+    snapshot(); vprops(k, true).position_locked = !!on; tidyProps(k); changed(false); renderViewProps(); overlay();
+    msg(viewName(k) + (on ? ': đã khóa vị trí.' : ': đã mở khóa vị trí.'), 'ok');
+  }
+  // Bố trí lại: hình chưa khóa vị trí về chỗ tự động; withScale -> hình chưa khóa tỉ lệ về tỉ lệ trang.
+  function relayout(withScale) {
+    var p = page(); if (!p) return;
+    snapshot();
+    var vp = p.view_props || {};
+    Object.keys(p.offsets || {}).forEach(function (k) { if (!(vp[k] && vp[k].position_locked)) delete p.offsets[k]; });
+    if (withScale) Object.keys(vp).forEach(function (k) { if (!vp[k].scale_locked) { vp[k].scale_override = null; tidyProps(k); } });
+    changed(); requestRender(true);
+    msg('Đã bố trí lại' + (withScale ? ' (hình đã khóa giữ nguyên tỉ lệ' : ' (') + ', hình khóa vị trí giữ chỗ).', 'ok');
+  }
+
   function renderViewProps() {
     var b = S.info && S.sel && S.info.boxes[S.sel];
-    if (!b) { $('propView').innerHTML = '<p class="hint">Bấm vào một hình chiếu trên giấy để chọn; kéo để di chuyển.</p>'; return; }
-    var off = (page().offsets || {})[S.sel] || [0, 0];
+    if (!b) { $('propView').innerHTML = '<p class="hint">Bấm vào một hình chiếu trên giấy để chọn; kéo để di chuyển. Chuột phải để đổi tỉ lệ riêng / khóa.</p>'; return; }
+    var k = S.sel, off = (page().offsets || {})[k] || [0, 0], v = vprops(k) || {}, eff = effScale(k), lk = scaleLocked(k);
+    var base = /^det:/.test(k) ? 'Theo tỉ lệ chi tiết' : 'Theo tỉ lệ trang (' + (page().scale ? '1:' + page().scale : 'tự động') + ')';
+    var list = SCALE_MENU.slice(); if (v.scale_override && list.indexOf(v.scale_override) < 0) list.push(v.scale_override);
+    list.sort(function (a, c) { return a - c; });
     $('propView').innerHTML = '<table>' +
-      '<tr><td>Hình</td><td>' + esc(cap(S.viewNames[S.sel] || S.sel)) + '</td></tr>' +
+      '<tr><td>Hình</td><td>' + esc(viewName(k)) + '</td></tr>' +
+      '<tr><td>Tỉ lệ đang in</td><td><b>1:' + eff + '</b>' + (lk ? ' 🔒' : '') + '</td></tr>' +
       '<tr><td>Vị trí trên giấy</td><td>' + b[0].toFixed(1) + ', ' + b[1].toFixed(1) + ' mm</td></tr>' +
       '<tr><td>Khung chiếm chỗ</td><td>' + b[2].toFixed(1) + ' × ' + b[3].toFixed(1) + ' mm</td></tr>' +
       '<tr><td>Dịch so với tự động</td><td>' + off[0].toFixed(1) + ', ' + off[1].toFixed(1) + ' mm</td></tr>' +
-      '</table><div class="btns"><button id="vReset">Về vị trí tự động</button></div>';
-    $('vReset').onclick = function () {
-      snapshot(); delete page().offsets[S.sel]; changed();
+      '</table><label>Tỉ lệ riêng của hình</label><select id="vScale"' + (lk ? ' disabled title="Đang khóa tỉ lệ"' : '') + '>' +
+      '<option value="0">' + esc(base) + '</option>' +
+      list.map(function (n) { return '<option value="' + n + '"' + (v.scale_override === n ? ' selected' : '') + '>1:' + n + '</option>'; }).join('') +
+      '<option value="custom">Tùy chỉnh…</option></select>' +
+      '<div class="checks"><label><input id="vLock" type="checkbox"' + (lk ? ' checked' : '') + '> Khóa tỉ lệ</label>' +
+      '<label><input id="vPos" type="checkbox"' + (v.position_locked ? ' checked' : '') + '> Khóa vị trí</label></div>' +
+      '<div class="btns"><button id="vReset"' + (v.position_locked ? ' disabled' : '') + '>Về vị trí tự động</button><button id="vRelayout">Tự động bố trí lại</button></div>';
+    $('vScale').onchange = function () {
+      if (this.value === 'custom') { customScale(k); renderViewProps(); return; }
+      setViewScale(k, parseInt(this.value, 10) || null);
+    };
+    $('vLock').onchange = function () { lockScale(k, this.checked); };
+    $('vPos').onchange = function () { lockPos(k, this.checked); };
+    $('vReset').onclick = function () { snapshot(); delete page().offsets[k]; changed(); };
+    $('vRelayout').onclick = function () { relayout(true); };
+  }
+
+  // Biểu tượng khóa / tỉ lệ riêng: chỉ hiện trong trình biên tập (vẽ thêm phía JS, không có trong PDF/SVG xuất).
+  function overlay() {
+    var svg = $('paper').querySelector('svg'); if (!svg || !S.info || !S.info.frames) return;
+    svg.querySelectorAll('g.edonly').forEach(function (g) { g.remove(); });
+    var NS = 'http://www.w3.org/2000/svg';
+    var g = document.createElementNS(NS, 'g'); g.setAttribute('class', 'edonly');
+    Object.keys(S.info.frames).forEach(function (k) {
+      var v = vprops(k); if (!v || (!v.scale_override && !v.position_locked)) return;
+      var f = S.info.frames[k], cx = f[0] + f[3] / f[2] / 2, y = f[1] + f[4] / f[2] + 11.1;
+      var lock = function (x, color) {
+        var r = document.createElementNS(NS, 'rect');
+        r.setAttribute('x', x); r.setAttribute('y', y - 1.9); r.setAttribute('width', 2.0); r.setAttribute('height', 1.5);
+        r.setAttribute('rx', 0.2); r.setAttribute('fill', color); g.appendChild(r);
+        var a = document.createElementNS(NS, 'path');
+        a.setAttribute('d', 'M' + (x + 0.45) + ' ' + (y - 1.9) + 'v-0.5a0.55 0.55 0 0 1 1.1 0v0.5');
+        a.setAttribute('fill', 'none'); a.setAttribute('stroke', color); a.setAttribute('stroke-width', 0.3); g.appendChild(a);
+      };
+      if (v.scale_locked) lock(cx + 6, '#C9A45C');
+      else if (v.scale_override) {
+        var t = document.createElementNS(NS, 'text');
+        t.setAttribute('x', cx + 6); t.setAttribute('y', y - 0.4); t.setAttribute('font-size', 1.8); t.setAttribute('fill', '#C9A45C');
+        t.textContent = 'riêng'; g.appendChild(t);
+      }
+      if (v.position_locked) lock(cx - 8, '#8A8F8B');
+    });
+    svg.appendChild(g);
+  }
+
+  // ---------------- ký hiệu cánh (v2.6) ----------------
+  function symStyle() {
+    return { w: parseFloat($('symW').value) || 0.18, color: $('symColor').value || '#6B6F6C', dash: $('symDash').value || 'dash' };
+  }
+  function doorList() {
+    var seen = {}, out = [];
+    var di = (S.info && S.info.door_items) || {};
+    Object.keys(di).forEach(function (k) { di[k].forEach(function (it) { if (!seen[it.path]) { seen[it.path] = 1; out.push({ path: it.path, name: it.name }); } }); });
+    ((S.info && S.info.doors) || []).forEach(function (d) { if (d.path && !seen[d.path]) { seen[d.path] = 1; out.push({ path: d.path, name: d.name }); } });
+    return out;
+  }
+  function setDoorSym(path, patch) {
+    var p = page(); if (!p) return;
+    snapshot(); p.door_symbols = p.door_symbols || {};
+    var d = p.door_symbols[path] || { type: 'none', style: symStyle(), visible: true };
+    Object.keys(patch).forEach(function (x) { d[x] = patch[x]; });
+    p.door_symbols[path] = d; changed(); renderSyms();
+  }
+  function renderSyms() {
+    var p = page(), box = $('symList'); if (!box) return;
+    var list = p ? doorList() : [];
+    var ds = (p && p.door_symbols) || {};
+    box.innerHTML = list.length ? list.map(function (d) {
+      var cur = ds[d.path] || {}, t = cur.type || 'none';
+      return '<div class="it" data-path="' + esc(d.path) + '"><span class="nm" title="' + esc(d.path) + '">' + esc(d.name) + '</span>' +
+        '<select class="sym">' + Object.keys(DOOR_TYPES).map(function (x) { return '<option value="' + x + '"' + (x === t ? ' selected' : '') + '>' + DOOR_TYPES[x] + '</option>'; }).join('') + '</select>' +
+        '<input class="vis" type="checkbox" title="Hiện ký hiệu"' + (cur.visible === false ? '' : ' checked') + '></div>';
+    }).join('') : '<p class="hint">Chưa có cánh trên trang này (gán vai trò "Cánh" ở mục CẤU TẠO TỦ).</p>';
+  }
+  $('symList').addEventListener('change', function (e) {
+    var it = e.target.closest('.it'); if (!it) return;
+    if (e.target.classList.contains('sym')) setDoorSym(it.dataset.path, { type: e.target.value });
+    if (e.target.classList.contains('vis')) setDoorSym(it.dataset.path, { visible: e.target.checked });
+  });
+  $('symApply').onclick = function () {
+    var p = page(); if (!p) return;
+    var st = symStyle(); snapshot(); p.door_symbols = p.door_symbols || {};
+    Object.keys(p.door_symbols).forEach(function (k) { p.door_symbols[k].style = JSON.parse(JSON.stringify(st)); });
+    changed(); msg('Đã áp kiểu nét cho ' + Object.keys(p.door_symbols).length + ' cánh.', 'ok');
+  };
+  function doorAt(k, pt) {
+    var f = frameOf(k), items = (S.info && S.info.door_items && S.info.door_items[k]) || [], best = null;
+    if (!f) return null;
+    items.forEach(function (it) {
+      var b = it.box, x0 = f[0] + b[0] / f[2], x1 = f[0] + b[1] / f[2], y0 = f[1] + b[2] / f[2], y1 = f[1] + b[3] / f[2];
+      if (pt[0] >= x0 && pt[0] <= x1 && pt[1] >= y0 && pt[1] <= y1) {
+        var a = (x1 - x0) * (y1 - y0); if (!best || a < best.a) best = { a: a, path: it.path, name: it.name };
+      }
+    });
+    return best;
+  }
+
+  // ---------------- menu chuột phải trên hình chiếu ----------------
+  function hideCtx() { var m = $('ctxMenu'); m.hidden = true; m.innerHTML = ''; }
+  function showCtx(x, y, k, door) {
+    var m = $('ctxMenu'), lk = scaleLocked(k), v = vprops(k) || {}, eff = effScale(k), h = [];
+    var it = function (act, label, opts) {
+      opts = opts || {};
+      h.push('<div class="it' + (opts.off ? ' off' : '') + (opts.on ? ' on' : '') + '" data-act="' + act + '"' + (opts.title ? ' title="' + esc(opts.title) + '"' : '') + '>' + esc(label) + '</div>');
+    };
+    h.push('<div class="hd">' + esc(viewName(k)) + '<small>TL 1:' + eff + (lk ? ' · đã khóa' : v.scale_override ? ' · riêng' : '') + '</small></div>');
+    if (door) {
+      var cur = ((page().door_symbols || {})[door.path] || {}).type || 'none';
+      h.push('<div class="lb">Ký hiệu cánh – ' + esc(door.name) + '</div>');
+      Object.keys(DOOR_TYPES).forEach(function (t) { it('door:' + t, DOOR_TYPES[t], { on: t === cur }); });
+      h.push('<div class="sep"></div>');
+    }
+    h.push('<div class="lb">Đổi tỷ lệ riêng' + (lk ? ' (đang khóa)' : '') + '</div><div class="grid' + (lk ? ' off' : '') + '">' +
+      SCALE_MENU.map(function (n) { return '<span data-act="scale:' + n + '" class="' + (v.scale_override === n ? 'on' : '') + '">1:' + n + '</span>'; }).join('') + '</div>');
+    it('custom', 'Tùy chỉnh tỷ lệ…', { off: lk });
+    it('page', /^det:/.test(k) ? 'Theo tỷ lệ chi tiết' : 'Trở về tỷ lệ mặc định của trang', { off: lk || !v.scale_override, title: lk ? 'Mở khóa trước' : '' });
+    h.push('<div class="sep"></div>');
+    it(lk ? 'unlock' : 'lock', lk ? 'Mở khóa tỷ lệ' : 'Khóa tỷ lệ (1:' + eff + ')');
+    it(v.position_locked ? 'unpos' : 'pos', v.position_locked ? 'Mở khóa vị trí' : 'Khóa vị trí');
+    h.push('<div class="sep"></div>');
+    it('relayout', 'Tự động bố trí lại hình chiếu');
+    m.innerHTML = h.join(''); m.hidden = false;
+    var w = m.offsetWidth, hh = m.offsetHeight;
+    m.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 4)) + 'px';
+    m.style.top = Math.max(4, Math.min(y, window.innerHeight - hh - 4)) + 'px';
+    m.onclick = function (e) {
+      var a = e.target.closest('[data-act]'); if (!a || a.classList.contains('off') || a.parentNode.classList.contains('off')) return;
+      var act = a.dataset.act; hideCtx();
+      if (act.indexOf('door:') === 0) setDoorSym(door.path, { type: act.slice(5) });
+      else if (act.indexOf('scale:') === 0) setViewScale(k, parseInt(act.slice(6), 10));
+      else if (act === 'custom') customScale(k);
+      else if (act === 'page') setViewScale(k, null);
+      else if (act === 'lock') lockScale(k, true);
+      else if (act === 'unlock') lockScale(k, false);
+      else if (act === 'pos') lockPos(k, true);
+      else if (act === 'unpos') lockPos(k, false);
+      else if (act === 'relayout') relayout(true);
     };
   }
+  $('stage').addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+    var g = e.target.closest && e.target.closest('g.view');
+    if (!g || !S.info) { hideCtx(); return; }
+    var k = g.getAttribute('data-key');
+    S.sel = k; S.selNote = null; highlight();
+    showCtx(e.clientX, e.clientY, k, doorAt(k, toPaper(e)));
+  });
+  $('stage').addEventListener('dblclick', function (e) {
+    var g = e.target.closest && e.target.closest('g.view');
+    if (!g || !S.info || S.tool !== 'select') return;
+    var k = g.getAttribute('data-key'), d = doorAt(k, toPaper(e));
+    if (d) showCtx(e.clientX, e.clientY, k, d);
+  });
+  document.addEventListener('mousedown', function (e) { if (!e.target.closest('#ctxMenu')) hideCtx(); }, true);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideCtx(); });
 
   // ---------------- tờ giấy: mỗi tờ thật = 1 dòng ----------------
   function incCode(code, j) {
@@ -499,9 +719,10 @@
       hit.setAttribute('fill', 'transparent'); g.insertBefore(hit, g.firstChild);
     });
     if (!S.fitted) { fit(); S.fitted = true; } else applyView();
+    overlay(); renderSyms();
     highlight();
     var paperName = S.project.paper;
-    $('stInfo').textContent = paperName + ' ngang · TL 1:' + info.scale + ' · ' + (info.ms || 0) + ' ms';
+    $('stInfo').textContent = paperName + ' ngang · TL ' + (info.scale_label || '1:' + info.scale) + ' · ' + (info.ms || 0) + ' ms';
     if (info.note) msg(info.note, 'warn');
   }
   function highlight() {
@@ -583,6 +804,7 @@
     }
     if (e.button !== 0) return;
     S.sel = g.getAttribute('data-key'); S.selNote = null; highlight(); renderNotes();
+    if (posLocked(S.sel)) { msg(viewName(S.sel) + ' đang khóa vị trí (chuột phải để mở khóa).', 'warn'); e.preventDefault(); return; }
     drag = { mode: 'move', g: g, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
     e.preventDefault();
   });
@@ -639,7 +861,9 @@
       var sc = (page().sections || []).filter(function (x) { return x.label === d.label; })[0]; if (!sc) return;
       snapshot();
       // giấy -> mm thật: X theo chiều ngang; Z (mặt đứng) và Y (mặt bằng) ngược chiều trục giấy
-      sc.pos = Math.round((sc.pos + (d.axis === 'x' ? d.dx : -d.dy) * S.info.scale) * 10) / 10;
+      var gv = d.g.closest('g.view'), fv = gv && frameOf(gv.getAttribute('data-key'));
+      var ks = fv ? fv[2] : S.info.scale; // tỉ lệ in thật của hình chứa đường cắt
+      sc.pos = Math.round((sc.pos + (d.axis === 'x' ? d.dx : -d.dy) * ks) * 10) / 10;
       sc.auto = false; renderSections(); changed(); requestRender(true);
       return;
     }
@@ -672,7 +896,9 @@
     if (e.key === 'PageUp') { e.preventDefault(); gotoRow(curRowIndex(sheetRows()) - 1); }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selNote) { e.preventDefault(); deleteNote(); return; }
     if (S.sel && /^Arrow/.test(e.key)) {
-      e.preventDefault(); snapshot();
+      e.preventDefault();
+      if (posLocked(S.sel)) { msg(viewName(S.sel) + ' đang khóa vị trí.', 'warn'); return; }
+      snapshot();
       var st = e.shiftKey ? 10 : 1, p = page(), o = p.offsets[S.sel] || [0, 0];
       var dx = e.key === 'ArrowLeft' ? -st : e.key === 'ArrowRight' ? st : 0;
       var dy = e.key === 'ArrowUp' ? -st : e.key === 'ArrowDown' ? st : 0;
@@ -830,7 +1056,7 @@
     $(id).addEventListener('change', readPage);
   });
   $('pgPick').onclick = function () { var p = page(); if (p) call('pick', String(p.pid)); };
-  $('pgReset').onclick = function () { var p = page(); if (!p) return; snapshot(); p.offsets = {}; changed(); };
+  $('pgReset').onclick = function () { relayout(false); };
 
   // Khung tên
   $('tbForm').addEventListener('change', function (e) {
