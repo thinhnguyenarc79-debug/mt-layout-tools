@@ -218,8 +218,9 @@ module MTDesign
                                        else
                                          layout = Sheet.layout_of(outs)
                                          vp = pg['view_props'] || {}
-                                         layout.each do |k, (x, y, sh)|
+                                         layout.each do |k, (x, y, sh, _w, _h, sc)|
                                            vp[k] = (vp[k] || {}).merge('placement_mode' => 'auto', 'x_mm' => x, 'y_mm' => y, 'sheet' => sh)
+                                           vp[k]['base_scale'] = sc unless vp[k]['scale_override']
                                          end
                                          pg['view_props'] = ProjectStore.clean_view_props(vp)
                                          pg['sheet_count'] = outs.length

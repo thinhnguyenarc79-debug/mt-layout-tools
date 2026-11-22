@@ -158,6 +158,29 @@ module MTDesign
           end
         end
 
+        # Cắt theo elip nội tiếp khung (hình tròn khi w = h) – chi tiết trích tròn/elip chỉ hiện phần bên trong.
+        def clip_ellipse(x, y, w, h)
+          cx = x + w / 2.0
+          cy = y + h / 2.0
+          rx = w / 2.0
+          ry = h / 2.0
+          if @fmt == :pdf
+            k = 0.5523
+            pts = [[cx + rx, cy], [cx + rx, cy - ry * k], [cx + rx * k, cy - ry], [cx, cy - ry], [cx - rx * k, cy - ry], [cx - rx, cy - ry * k],
+                   [cx - rx, cy], [cx - rx, cy + ry * k], [cx - rx * k, cy + ry], [cx, cy + ry], [cx + rx * k, cy + ry], [cx + rx, cy + ry * k],
+                   [cx + rx, cy]]
+            path = "#{xy(pts[0])} m " + (0...4).map { |i| "#{xy(pts[1 + 3 * i])} #{xy(pts[2 + 3 * i])} #{xy(pts[3 + 3 * i])} c" }.join(' ')
+            @out << "q #{path} h W n"
+            yield
+            @out << 'Q'
+          else
+            id = "c#{@out.length}"
+            @out << %(<clipPath id="#{id}"><ellipse cx="#{n(cx)}" cy="#{n(cy)}" rx="#{n(rx)}" ry="#{n(ry)}"/></clipPath><g clip-path="url(##{id})">)
+            yield
+            @out << '</g>'
+          end
+        end
+
         # Nhóm có thuộc tính (chỉ SVG) để giao diện chọn/kéo từng hình chiếu.
         def group(attrs = {})
           @out << '<g' + attrs.map { |k, v| %( #{k}="#{esc(v)}") }.join + '>' if @fmt == :svg

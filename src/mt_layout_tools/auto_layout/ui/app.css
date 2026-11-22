@@ -173,3 +173,5 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 .dlg .warn { color: #b3261e; margin: 6px 0; }
 .dlg table { width: 100%; border-collapse: collapse; } .dlg td { padding: 2px 4px; border-bottom: 1px solid #f0eee6; }
 @media (max-width: 1560px) { #top .brand { display: none; } #top { gap: 6px; } #top .tools { gap: 6px; } }
+
+#paper g.edhandles rect.dh { cursor: nwse-resize; }

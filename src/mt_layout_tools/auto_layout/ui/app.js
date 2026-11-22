@@ -264,7 +264,8 @@
     if (scaleLocked(k)) { msg(viewName(k) + ' đang khóa tỉ lệ 1:' + effScale(k) + ' – mở khóa trước khi đổi.', 'err'); return; }
     snapshot();
     if (sc) vprops(k, true).scale_override = sc;
-    else if (vprops(k)) { vprops(k).scale_override = null; tidyProps(k); }
+    else if (vprops(k)) { vprops(k).scale_override = null; vprops(k).base_scale = null; tidyProps(k); }
+    S.pendingCheck = { kind: 'view', key: k }; // chỉ hình này đổi; dựng xong kiểm tra chồng hình / tràn giấy
     changed(); requestRender(true);
     msg(sc ? viewName(k) + ': tỉ lệ riêng 1:' + sc + ' – vị trí giữ nguyên (chồng hình/tràn giấy sẽ được báo; dùng "Dàn trang lại" nếu cần).' : viewName(k) + ': theo tỉ lệ mặc định của trang.', 'ok');
   }
@@ -449,6 +450,22 @@
       if (v.position_locked) lock(cx - 8, '#8A8F8B');
     });
     svg.appendChild(g);
+    // điểm điều khiển vùng trích của chi tiết đang chọn (chỉ khi biên tập)
+    svg.querySelectorAll('g.edhandles').forEach(function (x) { x.remove(); });
+    var dsel = S.selDet && (page().details || []).filter(function (x) { return x.n === S.selDet; })[0];
+    var fs = dsel && S.info.frames[dsel.src];
+    if (fs) {
+      var hg = document.createElementNS(NS, 'g'); hg.setAttribute('class', 'edhandles');
+      var R = dsel.rect, P = [[R[0], R[1]], [R[2], R[1]], [R[2], R[3]], [R[0], R[3]]];
+      P.forEach(function (q, i) {
+        var hr = document.createElementNS(NS, 'rect');
+        hr.setAttribute('x', fs[0] + q[0] / fs[2] - 1.2); hr.setAttribute('y', fs[1] + q[1] / fs[2] - 1.2);
+        hr.setAttribute('width', 2.4); hr.setAttribute('height', 2.4); hr.setAttribute('class', 'dh'); hr.setAttribute('data-c', i);
+        hr.setAttribute('fill', '#FFFFFF'); hr.setAttribute('stroke', '#C9A45C'); hr.setAttribute('stroke-width', 0.4);
+        hg.appendChild(hr);
+      });
+      svg.appendChild(hg);
+    }
   }
 
   // ---------------- ký hiệu cánh (v2.6) ----------------
@@ -512,6 +529,19 @@
       h.push('<div class="it' + (opts.off ? ' off' : '') + (opts.on ? ' on' : '') + '" data-act="' + act + '"' + (opts.title ? ' title="' + esc(opts.title) + '"' : '') + '>' + esc(label) + '</div>');
     };
     h.push('<div class="hd">' + esc(viewName(k)) + '<small>TL 1:' + eff + (lk ? ' · đã khóa' : v.scale_override ? ' · riêng' : '') + '</small></div>');
+    var cands = S.ctxParts || [];
+    if (cands.length) {
+      var cp0 = cands[S.ctxPartIdx || 0], eff = ((page().roles || {})[cp0.path]) || cp0.role || 'unknown';
+      h.push('<div class="lb">Bộ phận: <b>' + esc(partLabelShort(cp0)) + '</b>' + ((S.ctxPartIdx || 0) === 0 ? ' (phía trước)' : '') + ' – ' + esc(ROLES[eff] || eff) + '</div><div class="grid">' +
+        [['door', 'Cánh'], ['side', 'Vách'], ['shelf', 'Đợt'], ['back', 'Hậu'], ['drawer', 'Ngăn kéo'], ['top', 'Nóc'], ['bottom', 'Đáy'], ['handle', 'Tay nắm'], ['accessory', 'Khác'], ['glass', 'Kính']]
+          .map(function (r) { return '<span data-act="role:' + r[0] + '" class="' + (eff === r[0] ? 'on' : '') + '">' + r[1] + '</span>'; }).join('') + '</div>');
+      it('pview', 'Xem bộ phận trong SketchUp'); it('punset', 'Bỏ phân loại (về tự nhận)', { off: !((page().roles || {})[cp0.path]) });
+      if (cands.length > 1) {
+        h.push('<div class="lb">Bộ phận khác tại điểm bấm (trước → sau)</div>');
+        cands.forEach(function (c, i) { if (i !== (S.ctxPartIdx || 0)) it('pick:' + i, partLabelShort(c) + ' – ' + (ROLES[((page().roles || {})[c.path]) || c.role] || '?')); });
+      }
+      h.push('<div class="sep"></div>');
+    }
     if (door) {
       var cur = ((page().door_symbols || {})[door.path] || {}).type || 'none';
       h.push('<div class="lb">Ký hiệu cánh – ' + esc(door.name) + '</div>');
@@ -534,6 +564,8 @@
       h.push('<div class="lb">Kiểu marker</div>');
       [['rect', 'Chữ nhật nét đứt'], ['circle', 'Tròn nét đứt'], ['ellipse', 'Elip nét đứt']].forEach(function (x) { it('dmk:' + x[0], x[1], { on: (mkr.shape || 'rect') === x[0] }); });
       it('darrow', 'Có mũi tên', { on: !!mkr.arrow }); it('dbubble', 'Có bóng số tham chiếu', { on: mkr.bubble !== false });
+      var fillOn = det.fill == null ? !!page().fill : det.fill;
+      it('dfill1', 'Tô màu vật liệu', { on: fillOn }); it('dfill0', 'Nét kỹ thuật đơn sắc', { on: !fillOn });
       h.push('<div class="sep"></div>');
       it('drename', 'Đổi tên chi tiết…'); it('dreselect', 'Chọn lại vùng trích chi tiết');
     }
@@ -551,7 +583,13 @@
     m.style.top = Math.max(4, Math.min(y, window.innerHeight - hh - 4)) + 'px';
     m.onclick = function (e) {
       var a = e.target.closest('[data-act]'); if (!a || a.classList.contains('off') || a.parentNode.classList.contains('off')) return;
-      var act = a.dataset.act; hideCtx();
+      var act = a.dataset.act;
+      if (act.indexOf('pick:') === 0) { S.ctxPartIdx = +act.slice(5); showCtx(x, y, k, door); return; } // đổi bộ phận đang gán, giữ menu
+      hideCtx();
+      var cpx = (S.ctxParts || [])[S.ctxPartIdx || 0];
+      if (act.indexOf('role:') === 0 && cpx) { setRoles([cpx.path], act.slice(5), 'Đã gán ' + partLabelShort(cpx) + ' là "' + ROLES[act.slice(5)] + '"'); return; }
+      if (act === 'pview' && cpx) { call('highlight_part', { pid: page().pid, path: cpx.path }); return; }
+      if (act === 'punset' && cpx) { setRoles([cpx.path], '', 'Đã bỏ phân loại tay của ' + partLabelShort(cpx)); return; }
       if (act.indexOf('door:') === 0) setDoorSym(door.path, { type: act.slice(5) });
       else if (act.indexOf('scale:') === 0) setViewScale(k, parseInt(act.slice(6), 10));
       else if (act === 'custom') customScale(k);
@@ -570,6 +608,7 @@
       else if (act === 'delv') deleteView(k);
       else if (act.indexOf('dsc:') === 0) editDetail(dn, function (d) { d.scale = +act.slice(4); });
       else if (act.indexOf('dmk:') === 0) editDetail(dn, function (d) { d.marker = Object.assign({}, d.marker || {}, { shape: act.slice(4) }); });
+      else if (act === 'dfill1' || act === 'dfill0') editDetail(dn, function (d) { d.fill = act === 'dfill1'; });
       else if (act === 'darrow') editDetail(dn, function (d) { d.marker = Object.assign({}, d.marker || {}); d.marker.arrow = !d.marker.arrow; });
       else if (act === 'dbubble') editDetail(dn, function (d) { d.marker = Object.assign({}, d.marker || {}); d.marker.bubble = d.marker.bubble === false; });
       else if (act === 'drename') {
@@ -610,6 +649,7 @@
     if (page().offsets) delete page().offsets[k];
     if (/^det:/.test(k)) editDetail(+k.slice(4), function (d) { d.sheet = j; }, true);
     S.pendingPlace = at ? null : k;
+    if (at) S.pendingCheck = { kind: 'view', key: k };
     changed();
     if (j !== (S.sheet || 0)) { S.sheet = j; renderPages(); }
     requestRender(true);
@@ -633,12 +673,14 @@
     var v = vprops(nk, true);
     if (at) { v.placement_mode = 'manual'; v.x_mm = at[0]; v.y_mm = at[1]; } else { v.placement_mode = 'auto'; v.x_mm = v.y_mm = null; }
     v.sheet = j;
-    var sc0 = vprops(k); if (sc0 && sc0.scale_override) v.scale_override = sc0.scale_override;
+    var sc0 = vprops(k); if (sc0 && sc0.scale_override) v.scale_override = sc0.scale_override; else if (sc0 && sc0.base_scale) v.base_scale = sc0.base_scale;
     S.pendingPlace = at ? null : nk;
+    if (at) S.pendingCheck = { kind: 'view', key: nk };
     changed();
     if (j !== (S.sheet || 0)) { S.sheet = j; renderPages(); }
     requestRender(true);
     msg('Đã TẠO BẢN SAO ' + viewName(k) + ' ở ' + sheetCode(j) + ' – bản gốc VẪN Ở ' + sheetCode(sheetOf(k) || 0) + '. ↶ để hoàn tác.', 'ok');
+    return nk;
   }
   function editDetail(n, fn, quiet) {
     var p = page(), d = (p.details || []).filter(function (x) { return x.n === n; })[0]; if (!d) return;
@@ -665,9 +707,68 @@
   function noRoomDialog(k) {
     dialog('Trang hiện tại không đủ chỗ', '<p>' + esc(viewName(k)) + ' không vừa chỗ trống của tờ ' + esc(sheetCode(S.sheet || 0)) + '. Bạn muốn:</p>',
       [['Hủy (↶)', function () { $('undo').click(); }],
+       ['Chọn tỷ lệ khác', function () { customScale(k); }],
+       ['Chọn vị trí khác', function () { var b = S.info.boxes[k] || [0, 0, 80, 60]; startPlacing(b[2], b[3], viewName(k), function (at) { snapshot(); placeManual(k, at[0], at[1]); S.pendingCheck = { kind: 'view', key: k }; changed(); requestRender(true); }); }],
        ['Chuyển sang trang khác', function () { moveView(k, sheetCount()); }],
        ['Tự bố trí lại trang này', function () { snapshot(); relayoutPages([page()], S.sheet || 0, false); changed(); requestRender(true); }, 'gold']]);
   }
+
+  // Xem trước vị trí đặt: khung theo chuột, bấm để xác nhận, Esc để hủy
+  function startPlacing(w, h, label, done) {
+    stopPlacing();
+    var el = ghost('ghost-rect', { width: w * S.k + 'px', height: h * S.k + 'px', pointerEvents: 'none' });
+    el.textContent = label; el.style.fontSize = '11px'; el.style.color = '#2F4A3A'; el.style.padding = '2px';
+    S.placing = { el: el, done: done };
+    msg('Di chuột tới chỗ đặt ' + label + ' và bấm để xác nhận (Esc để hủy).', '');
+  }
+  function stopPlacing() { if (S.placing) { S.placing.el.remove(); S.placing = null; } }
+  window.addEventListener('mousemove', function (e) {
+    if (!S.placing) return;
+    var r = $('stage').getBoundingClientRect();
+    S.placing.el.style.left = (e.clientX - r.left) + 'px'; S.placing.el.style.top = (e.clientY - r.top) + 'px';
+  });
+  $('stage').addEventListener('mousedown', function (e) {
+    if (!S.placing || e.button !== 0) return;
+    var pl = S.placing, at = toPaper(e); stopPlacing();
+    pl.done([Math.round(at[0] * 100) / 100, Math.round(at[1] * 100) / 100]);
+    e.stopImmediatePropagation(); e.preventDefault();
+  }, true);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && S.placing) { stopPlacing(); msg('Đã hủy thêm hình.', ''); } });
+
+  // ---------------- xung đột sau khi đổi tỉ lệ / thêm hình ----------------
+  function conflictCheck(chk, info) {
+    var cs = (info.conflicts || []).filter(function (c) { return chk.kind === 'page' || c.a === chk.key || c.b === chk.key; });
+    if (!cs.length) return;
+    var txt = cs.map(function (c) { return c.type === 'overflow' ? viewName(c.a) + ' tràn ra ngoài vùng vẽ' : viewName(c.a) + ' chồng lên ' + viewName(c.b); });
+    var k = chk.key;
+    var btns = [['Hủy thay đổi', function () { $('undo').click(); }],
+                ['Giữ nguyên, hiện cảnh báo', function () { msg('Giữ nguyên bố cục – còn ' + cs.length + ' xung đột (xem dòng trạng thái).', 'warn'); }]];
+    if (k) btns.push(['Chuyển hình này sang trang mới', function () { moveView(k, sheetCount()); }]);
+    else btns.push(['Chuyển hình xung đột sang trang mới', function () {
+      var ks = []; cs.forEach(function (c) { var x = c.b && !posLocked(c.a) ? c.a : c.a; if (ks.indexOf(x) < 0 && !posLocked(x)) ks.push(x); });
+      snapshot(); var j = sheetCount();
+      ks.forEach(function (x) { var v = vprops(x, true); v.placement_mode = 'auto'; v.x_mm = v.y_mm = null; v.sheet = j; });
+      changed(); requestRender(true); msg('Đã chuyển ' + ks.length + ' hình sang tờ mới.', 'ok');
+    }]);
+    btns.push(['Dàn lại các hình chưa khóa', function () {
+      snapshot(); var n = relayoutPages([page()], S.sheet || 0, false); changed(); requestRender(true);
+      msg('Đã dàn lại ' + n + ' hình tự động trên tờ này (hình chỉnh tay / khóa giữ nguyên).', 'ok');
+    }, 'gold']);
+    dialog('Bố cục bị xung đột', '<p>Sau thay đổi vừa rồi:</p><div class="sub">' + txt.map(esc).join('<br>') + '</div>' +
+      '<p class="hint">Plugin không tự giảm tỉ lệ, không tự đẩy hình khác, không tự chuyển trang.</p>', btns);
+  }
+
+  // ---------------- gán bộ phận ngay trên bản vẽ 2D ----------------
+  function partsAt(k, pt) {
+    var f = frameOf(k), rects = (S.info && S.info.part_hits && S.info.part_hits[k]) || [];
+    if (!f || !rects.length) return [];
+    var u = (pt[0] - f[0]) * f[2], v = (pt[1] - f[1]) * f[2];
+    var byPath = {}; ((S.info && S.info.parts) || []).forEach(function (x) { byPath[x.path] = x; });
+    return rects.filter(function (r) { return u >= r[1] && u <= r[2] && v >= r[3] && v <= r[4]; })
+      .sort(function (a, b) { return b[5] - a[5]; }) // gần người xem trước
+      .slice(0, 8).map(function (r) { var x = byPath[r[0]] || {}; return { path: r[0], name: x.name || r[0], role: x.role, size: x.size }; });
+  }
+  function partLabelShort(c) { var z = (c.size || []).join('×'); return (c.name && !/^(group|component)\s*#?\d*$/i.test(c.name) ? c.name : 'Bộ phận') + (z ? ' ' + z : ''); }
 
   // ---------------- menu chuột phải trên VÙNG GIẤY TRỐNG ----------------
   function showPaperCtx(x, y, pt) {
@@ -714,19 +815,31 @@
         return '<label class="opt"><input type="radio" name="av" value="' + i + '"' + (i === def ? ' checked' : '') + '> <b>' + esc(r[1]) + '</b> <span class="hint">– ' + st + '</span></label>';
       }).join('') + '</div>' +
       '<label class="opt"><input type="radio" name="am" value="move" checked> <b>CHUYỂN từ trang khác sang</b> – bản gốc rời khỏi tờ cũ, không tạo trùng</label>' +
-      '<label class="opt"><input type="radio" name="am" value="copy"> <b>TẠO THÊM BẢN SAO</b> – bản gốc vẫn giữ ở tờ cũ, thêm 1 bản ở tờ này</label>';
+      '<label class="opt"><input type="radio" name="am" value="copy"> <b>TẠO THÊM BẢN SAO</b> – bản gốc vẫn giữ ở tờ cũ, thêm 1 bản ở tờ này</label>' +
+      '<label>Tỷ lệ cho hình này</label><select id="avScale"><option value="keep">Giữ tỷ lệ hiện có</option><option value="page">Theo tỷ lệ trang' +
+      (p.scale ? ' (1:' + p.scale + ')' : '') + '</option>' + SCALE_MENU.map(function (n) { return '<option value="' + n + '">1:' + n + '</option>'; }).join('') + '</select>' +
+      '<p class="hint">Bấm Thêm → khung xem trước đi theo chuột, bấm vào giấy để xác nhận vị trí (Esc để hủy). Các hình cũ không đổi tỷ lệ, không đổi vị trí.</p>';
     dialog('Thêm hình chiếu vào trang này', body, [['Hủy', null], ['Thêm', function () {
       var r = rows[+document.querySelector('input[name=av]:checked').value], mode = document.querySelector('input[name=am]:checked').value;
-      if (!r[2]) { // hình chưa bật: thêm mới vào trang, đặt tại điểm bấm
-        snapshot(); p.views = (p.views || []).concat([r[0]]);
-        var v = vprops(r[0], true); v.placement_mode = 'manual'; v.x_mm = pt[0]; v.y_mm = pt[1]; v.sheet = here;
-        renderPageProps(); changed(); requestRender(true);
-        msg('Đã thêm ' + r[1] + ' vào tờ ' + sheetCode(here) + ' (hình mới, không có bản gốc ở tờ khác).', 'ok'); return;
-      }
-      if (mode === 'move') {
-        if (sheetOf(r[0]) === here) { msg(r[1] + ' đã ở tờ này – chọn "Tạo thêm bản sao" nếu muốn có 2 hình.', 'warn'); return false; }
-        moveView(r[0], here, pt);
-      } else copyView(r[0], here, pt);
+      var scv = $('avScale').value;
+      if (r[2] && mode === 'move' && sheetOf(r[0]) === here) { msg(r[1] + ' đã ở tờ này – chọn "Tạo thêm bản sao" nếu muốn có 2 hình.', 'warn'); return false; }
+      var L = S.info && S.info.layout && S.info.layout[r[0]];
+      var cur = L && L[5] ? L[5] : (p.scale || 20), ns = scv === 'keep' ? cur : scv === 'page' ? (p.scale || cur) : +scv;
+      var w = L ? L[3] * cur / ns : 80, h = L ? L[4] * cur / ns : 60;
+      startPlacing(w, h, r[1] + (L ? '' : ' (kích thước thật hiện sau khi dựng)'), function (at) {
+        var key = r[0];
+        if (!r[2]) { // hình chưa bật: thêm mới vào trang, đặt tại điểm chọn
+          snapshot(); p.views = (p.views || []).concat([r[0]]);
+          var v = vprops(r[0], true); v.placement_mode = 'manual'; v.x_mm = at[0]; v.y_mm = at[1]; v.sheet = here;
+          S.pendingCheck = { kind: 'view', key: key }; renderPageProps();
+          msg('Đã thêm ' + r[1] + ' vào tờ ' + sheetCode(here) + ' (hình mới, không có bản gốc ở tờ khác).', 'ok');
+        } else if (mode === 'move') moveView(r[0], here, at);
+        else key = copyView(r[0], here, at);
+        var vv = vprops(key, true);
+        if (scv === 'page') { vv.scale_override = null; vv.base_scale = null; }
+        else if (scv !== 'keep') { vv.scale_override = +scv; vv.scale_locked = false; }
+        changed(); requestRender(true);
+      });
     }, 'gold']]);
   }
   // Lấp khoảng trống: hình ở tờ khác vừa chỗ trống của tờ này -> đề xuất chuyển sang
@@ -769,7 +882,7 @@
     e.preventDefault();
     if (!S.info) { hideCtx(); return; }
     var mk = e.target.closest && e.target.closest('g.detmark');
-    if (mk) { showCtx(e.clientX, e.clientY, 'det:' + mk.getAttribute('data-det'), null); return; }
+    if (mk) { S.ctxParts = []; S.selDet = +mk.getAttribute('data-det'); overlay(); showCtx(e.clientX, e.clientY, 'det:' + mk.getAttribute('data-det'), null); return; }
     var g = e.target.closest && e.target.closest('g.view');
     if (!g) {
       if (e.target.closest && e.target.closest('#paper svg')) showPaperCtx(e.clientX, e.clientY, toPaper(e));
@@ -778,7 +891,9 @@
     }
     var k = g.getAttribute('data-key');
     S.sel = k; S.selNote = null; highlight();
-    showCtx(e.clientX, e.clientY, k, doorAt(k, toPaper(e)));
+    var ptc = toPaper(e);
+    S.ctxParts = /^(sec|det):/.test(k) ? [] : partsAt(k, ptc); S.ctxPartIdx = 0;
+    showCtx(e.clientX, e.clientY, k, doorAt(k, ptc));
   });
   $('stage').addEventListener('dblclick', function (e) {
     var g = e.target.closest && e.target.closest('g.view');
@@ -1059,6 +1174,14 @@
 
   // ---------------- chú thích & chi tiết ----------------
   var TYPE_NAME = { text: 'Text', mtext: 'Ghi chú nhiều dòng', leader: 'Leader', material: 'Ghi chú vật liệu' };
+  function viewAtPaper(pt) {
+    var fr = (S.info && S.info.frames) || {}, best = null;
+    Object.keys(fr).forEach(function (k) {
+      var f = fr[k], w = f[3] / f[2], h = f[4] / f[2];
+      if (pt[0] >= f[0] && pt[0] <= f[0] + w && pt[1] >= f[1] && pt[1] <= f[1] + h && (!best || w * h < best.a)) best = { k: k, a: w * h };
+    });
+    return best && best.k;
+  }
   function toPaper(e) {
     var r = $('stage').getBoundingClientRect();
     return [(e.clientX - r.left - S.panX) / S.k, (e.clientY - r.top - S.panY) / S.k];
@@ -1229,14 +1352,20 @@
       var froze = 0;
       Object.keys(info.layout).forEach(function (k) {
         var cur = vprops(k);
-        if (cur && cur.x_mm != null) { if (cur.sheet !== info.layout[k][2]) { cur.sheet = info.layout[k][2]; froze++; } return; } // đồng bộ số tờ khi tờ trống bị gộp
+        if (cur && cur.x_mm != null) {
+          if (cur.sheet !== info.layout[k][2]) { cur.sheet = info.layout[k][2]; froze++; } // đồng bộ số tờ khi tờ trống bị gộp
+          if (!cur.scale_override && !cur.base_scale && info.layout[k][5]) { cur.base_scale = info.layout[k][5]; froze++; } // chốt tỉ lệ theo trang
+          return;
+        }
         var v = vprops(k, true), L = info.layout[k];
         v.placement_mode = 'auto'; v.x_mm = L[0]; v.y_mm = L[1]; v.sheet = L[2]; froze++;
+        if (!v.scale_override && L[5]) v.base_scale = L[5];
       });
       if (froze) markDirty();
     }
     if (S.pendingPlace && info.no_room && info.no_room.indexOf(S.pendingPlace) >= 0) noRoomDialog(S.pendingPlace);
-    S.pendingPlace = null;
+    else if (S.pendingCheck) conflictCheck(S.pendingCheck, info);
+    S.pendingPlace = null; S.pendingCheck = null;
     if (p && info.sections && p.sections == null) p.sections = info.sections; // nhận vị trí cắt plugin đề xuất
     renderSections(); renderDetails(); renderDoors(); if (S.selNote) renderNotes();
     renderNav();
@@ -1304,14 +1433,23 @@
         if (!place) { place = { tip: pt, el: ghost('tip-dot', { left: e.clientX - $('stage').getBoundingClientRect().left + 'px', top: e.clientY - $('stage').getBoundingClientRect().top + 'px' }) }; msg('Bấm vị trí đặt chữ.', ''); }
         else { place.el.remove(); var tool = S.tool; var tip = place.tip; place = null; addNote(tool, pt, tip); setTool('select'); }
       } else if (S.tool === 'detail') {
-        var gv = e.target.closest && e.target.closest('g.view');
-        if (!gv) { msg('Kéo khung bắt đầu từ bên trong một hình chiếu hoặc mặt cắt.', 'err'); return; }
+        // hình nguồn = hình có VÙNG VẼ chứa điểm bấm (không theo khung DIM của hình bên cạnh)
+        var vk = viewAtPaper(pt);
+        if (!vk) { msg('Kéo khung bắt đầu từ bên trong phần hình vẽ của một hình chiếu hoặc mặt cắt.', 'err'); return; }
         var r = $('stage').getBoundingClientRect();
-        drag = { mode: 'detail', key: gv.getAttribute('data-key'), a: pt, x: e.clientX, y: e.clientY,
+        drag = { mode: 'detail', key: vk, a: pt, b: pt, x: e.clientX, y: e.clientY,
                  el: ghost('ghost-rect', { left: (e.clientX - r.left) + 'px', top: (e.clientY - r.top) + 'px', width: '0', height: '0' }) };
       }
       e.preventDefault(); return;
     }
+    var dh = e.button === 0 && e.target.classList && e.target.classList.contains('dh');
+    if (dh) {
+      drag = { mode: 'dethandle', c: +e.target.getAttribute('data-c'), el: e.target, x: e.clientX, y: e.clientY, n: S.selDet };
+      e.preventDefault(); e.stopPropagation(); return;
+    }
+    var dmk = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.detmark');
+    if (dmk) { S.selDet = +dmk.getAttribute('data-det'); overlay(); msg('Kéo các ô vuông ở góc để chỉnh lại vùng trích (vùng lưu theo toạ độ của hình nguồn).', ''); e.preventDefault(); return; }
+    if (e.button === 0 && S.selDet && !(e.target.closest && e.target.closest('g.edhandles'))) { S.selDet = null; overlay(); }
     var gn = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.note');
     if (gn) {
       S.selNote = gn.getAttribute('data-id'); S.sel = null; highlight(); renderNotes();
@@ -1349,7 +1487,11 @@
     if (!drag) return;
     if (drag.mode === 'pan') {
       S.panX = drag.px + e.clientX - drag.x; S.panY = drag.py + e.clientY - drag.y; applyView();
+    } else if (drag.mode === 'dethandle') {
+      var pp = toPaper(e); drag.p = pp;
+      drag.el.setAttribute('x', pp[0] - 1.2); drag.el.setAttribute('y', pp[1] - 1.2);
     } else if (drag.mode === 'detail') {
+      drag.b = toPaper(e); // điểm cuối tính đúng như điểm đầu (zoom/pan/CSS) – không cộng dồn pixel
       var r = $('stage').getBoundingClientRect();
       Object.assign(drag.el.style, { left: (Math.min(e.clientX, drag.x) - r.left) + 'px', top: (Math.min(e.clientY, drag.y) - r.top) + 'px',
         width: Math.abs(e.clientX - drag.x) + 'px', height: Math.abs(e.clientY - drag.y) + 'px' });
@@ -1370,9 +1512,21 @@
   window.addEventListener('mouseup', function () {
     if (!drag) return;
     var d = drag; drag = null; $('stage').classList.remove('panning');
+    if (d.mode === 'dethandle') {
+      if (!d.p) return;
+      var dd = (page().details || []).filter(function (x) { return x.n === d.n; })[0], ff = dd && S.info.frames[dd.src]; if (!ff) return;
+      var u = Math.max(0, Math.min(ff[3], (d.p[0] - ff[0]) * ff[2])), w2 = Math.max(0, Math.min(ff[4], (d.p[1] - ff[1]) * ff[2]));
+      var R = dd.rect.slice();
+      if (d.c === 0) { R[0] = u; R[1] = w2; } else if (d.c === 1) { R[2] = u; R[1] = w2; } else if (d.c === 2) { R[2] = u; R[3] = w2; } else { R[0] = u; R[3] = w2; }
+      var nr = [Math.min(R[0], R[2]), Math.min(R[1], R[3]), Math.max(R[0], R[2]), Math.max(R[1], R[3])].map(function (x) { return Math.round(x * 10) / 10; });
+      if (nr[2] - nr[0] < 2 || nr[3] - nr[1] < 2) { overlay(); return; }
+      snapshot(); dd.rect = nr; changed(); requestRender(true);
+      msg('Đã chỉnh vùng trích ' + viewName('det:' + dd.n) + ' (tỷ lệ chi tiết giữ nguyên).', 'ok');
+      return;
+    }
     if (d.mode === 'detail') {
       d.el.remove(); setTool('select');
-      addDetail(d.key, d.a, [d.a[0] + (window.__lastX - d.x) / S.k, d.a[1] + (window.__lastY - d.y) / S.k]);
+      addDetail(d.key, d.a, d.b);
       return;
     }
     if (d.mode === 'note' || d.mode === 'tip') {
@@ -1595,10 +1749,10 @@
     p.iso_mode = $('pgIsoMode').value; p.iso_hidden = $('pgIsoHidden').checked;
     // Đổi tỉ lệ / hình chiếu / hướng của CHÍNH trang này: hỏi có dàn lại các hình tự động không (hình chỉnh tay & khóa giữ nguyên)
     if (before !== JSON.stringify([p.scale, p.front, p.views])) {
-      var autoN = Object.keys(p.view_props || {}).filter(function (k) { var v = p.view_props[k]; return v.x_mm != null && v.placement_mode !== 'manual' && !v.position_locked; }).length;
-      if (autoN && window.confirm('Dàn lại ' + autoN + ' hình TỰ ĐỘNG của trang này theo cài đặt mới?\n(Hình đã chỉnh tay và đã khóa giữ nguyên. Chọn Cancel để giữ mọi vị trí hiện tại.)')) {
-        relayoutPages([p], null, false);
-      }
+      // Tỉ lệ trang mới chỉ áp cho hình THEO TRANG (không có tỉ lệ riêng / không khóa); vị trí giữ nguyên,
+      // dựng xong kiểm tra chồng hình / tràn giấy và hỏi cách xử lý – không tự ép tỉ lệ cho vừa.
+      Object.keys(p.view_props || {}).forEach(function (k) { var v = p.view_props[k]; if (!v.scale_override) v.base_scale = null; });
+      S.pendingCheck = { kind: 'page' };
     }
     renderPages(); changed();
   }

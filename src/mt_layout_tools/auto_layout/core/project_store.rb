@@ -250,7 +250,8 @@ module MTDesign
                           'placement_mode' => manual ? 'manual' : 'auto',
                           'x_mm' => has ? v['x_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
                           'y_mm' => has ? v['y_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
-                          'sheet' => has || pend ? v['sheet'].to_i.clamp(0, 49) : nil }
+                          'sheet' => has || pend ? v['sheet'].to_i.clamp(0, 49) : nil,
+                          'base_scale' => v['base_scale'].to_i.between?(1, 500) ? v['base_scale'].to_i : nil }
           end
         end
 

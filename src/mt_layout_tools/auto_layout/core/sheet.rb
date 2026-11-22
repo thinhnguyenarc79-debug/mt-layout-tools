@@ -38,7 +38,7 @@ module MTDesign
         # Tỉ lệ hiệu lực của 1 hình: tỉ lệ riêng (scale_override / chi tiết) nếu có, ngược lại theo tỉ lệ tờ.
         # PageBuild gán v[:fixed_scale] từ page['view_props'][key]['scale_override'] trước khi dàn trang.
         def sc(v, s)
-          v[:fixed_scale] || s
+          v[:fixed_scale] || v[:base_scale] || s
         end
 
         # Tỉ lệ hiện trong khung tên: 1 tỉ lệ nếu mọi hình cùng tỉ lệ, ngược lại "THEO HÌNH".
@@ -194,9 +194,13 @@ module MTDesign
             info['note'] = 'Trang chưa có hình chiếu nào.'
             return ctx
           end
-          auto = forced || pick_scale(views, aw, ah)
+          frozen = views.any? { |v| v[:pin] || v[:base_scale] }
+          auto = forced || (frozen ? nil : pick_scale(views, aw, ah))
           want = forced || page['scale'].to_i
-          if auto.nil?
+          if frozen
+            # Bố cục đã chốt: KHÔNG tự đổi tỉ lệ để ép vừa giấy – hình nào tràn/chồng thì báo xung đột.
+            scale = want.positive? ? want : (views.map { |v| v[:base_scale] }.compact.first || pick_scale(views, aw, ah) || 20)
+          elsif auto.nil?
             scale = want.positive? ? want : SCALES.last
             info['note'] = 'Đối tượng quá lớn cho khổ giấy này; hãy chọn khổ lớn hơn hoặc bớt hình.'
           elsif want <= 0
@@ -285,6 +289,7 @@ module MTDesign
               py = v[:pin][:y].to_f
               info['boxes'][v[:key]] = [px, py, bw, bh].map { |n| n.round(2) }
               if px < area[0] - 0.5 || py < area[1] - 0.5 || px + bw > area[2] + 0.5 || py + bh > area[3] + 0.5
+                (info['conflicts'] ||= []) << { 'type' => 'overflow', 'a' => v[:key] }
                 add_note(info, "#{v[:name]} (#{v[:position_locked] ? 'đã khóa' : (v[:pin][:manual] ? 'đã chỉnh tay' : 'đã chốt chỗ')}) " \
                                'tràn ra ngoài vùng vẽ – giữ nguyên vị trí; kéo lại hoặc bấm "Dàn trang lại".')
               end
@@ -362,7 +367,9 @@ module MTDesign
         # Bố cục đã dựng của 1 trang (mọi tờ): { key => [x_mm, y_mm, tờ] } – để CHỐT vị trí, lần sau không tính lại.
         def layout_of(outs)
           outs.each_with_index.each_with_object({}) do |((_svg, inf), i), h|
-            (inf['boxes'] || {}).each { |k, b| h[k] = [b[0].to_f.round(2), b[1].to_f.round(2), i, b[2].to_f.round(1), b[3].to_f.round(1)] }
+            (inf['boxes'] || {}).each do |k, b|
+              h[k] = [b[0].to_f.round(2), b[1].to_f.round(2), i, b[2].to_f.round(1), b[3].to_f.round(1), (inf['view_scales'] || {})[k]]
+            end
           end
         end
 
@@ -380,6 +387,7 @@ module MTDesign
             b = boxes[p[:key]]
             next unless a && b && a[0] < b[0] + b[2] - 0.5 && b[0] < a[0] + a[2] - 0.5 && a[1] < b[1] + b[3] - 0.5 && b[1] < a[1] + a[3] - 0.5
 
+            (info['conflicts'] ||= []) << { 'type' => 'overlap', 'a' => v[:key], 'b' => p[:key] }
             add_note(info, "XUNG ĐỘT VỊ TRÍ: #{v[:name]} chồng lên #{p[:name]} – kéo sang chỗ trống hoặc bấm \"Dàn trang lại\".")
           end
         end
@@ -432,13 +440,21 @@ module MTDesign
           x0, y0 = v[:detail][:rect]
           tf = ->(p) { [ox + (p[0] - x0) / s, oy + (p[1] - y0) / s] }
           vw, vh = v[:w] / s, v[:h] / s
-          cv.clip(ox, oy, vw, vh) do
-            src[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if page['fill']
+          shape = v[:detail][:shape] || 'rect'
+          fill = v[:detail][:fill].nil? ? page['fill'] : v[:detail][:fill]
+          body = lambda do
+            # chỉ phần hình học trong vùng trích: mặt tô, nét (đã cắt sẵn), nét cắt + hatch của mặt cắt nguồn
+            src[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if fill
             chain(v[:lines].map { |a, b| [[ox + a[0] / s, oy + a[1] / s], [ox + b[0] / s, oy + b[1] / s]] })
               .each { |pl| cv.polyline(pl, 0.3, INK) }
             draw_cut(cv, src, tf)
           end
-          cv.rect(ox, oy, vw, vh, nil, '#8A8F8B', 0.2)
+          if shape == 'rect'
+            cv.clip(ox, oy, vw, vh, &body)
+            cv.rect(ox, oy, vw, vh, nil, '#8A8F8B', 0.2)
+          else
+            cv.clip_ellipse(ox, oy, vw, vh, &body) # tròn/elip: không lộ phần ngoài đường bao
+          end
         end
 
         # Ký hiệu vùng khoanh chi tiết trên hình nguồn: khung nét đứt + số chi tiết.

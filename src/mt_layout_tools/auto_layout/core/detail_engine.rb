@@ -30,7 +30,8 @@ module MTDesign
               'marker' => { 'shape' => SHAPES.include?(mk['shape'].to_s) ? mk['shape'].to_s : 'rect',
                             'arrow' => mk['arrow'] == true, 'bubble' => mk['bubble'] != false },
               # tờ chứa hình nguồn lúc trích và tờ đặt chi tiết (mặc định = tờ trích)
-              'src_sheet' => sheet.call(d['src_sheet']), 'sheet' => sheet.call(d['sheet']) }
+              'src_sheet' => sheet.call(d['src_sheet']), 'sheet' => sheet.call(d['sheet']),
+              'fill' => d['fill'].nil? ? nil : d['fill'] == true } # nil = theo trang, true = tô vật liệu, false = nét đơn sắc
           end
         end
 
@@ -112,7 +113,7 @@ module MTDesign
           {
             key: key(det), name: label(det), w: x1 - x0, h: y1 - y0, dims: true, level: src[:level],
             lines: lines, fills: [], notes: [], stats: {}, fixed_scale: det['scale'],
-            detail: { src: src, rect: det['rect'], shape: shape, n: det['n'] },
+            detail: { src: src, rect: det['rect'], shape: shape, n: det['n'], fill: det['fill'] },
             border: shape == 'rect' ? nil : ellipse_pts(x1 - x0, y1 - y0)
           }
         end

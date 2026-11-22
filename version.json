@@ -1,7 +1,7 @@
 {
-  "version": "2.10.0",
+  "version": "2.11.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "377df474f3ed13280cb39acd2c6ec07357f97d16bc9d026f5a471742f2b2c644",
-  "notes": "AUTO LAYOUT PRO v2.10.0: menu chuột phải cho hình chiếu và giấy trống (thêm hình vào trang – CHUYỂN hoặc TẠO BẢN SAO, dán, chuyển trang, lấp khoảng trống); chi tiết nằm ngay tờ trích, không còn nhảy về A-01; kiểu marker chi tiết chữ nhật/tròn/elip nét đứt, mũi tên, bóng số; đổi tên/tỷ lệ/vùng trích chi tiết"
+  "sha256": "c42e9309490311451dd02451e48c2eab5e20d637e11b107d87cbf3848c7b8bb1",
+  "notes": "AUTO LAYOUT PRO v2.11.0: vùng trích chi tiết chính xác (đúng toạ độ khi zoom/pan, cắt tròn/elip thật, chỉnh bằng điểm điều khiển); đổi tỉ lệ chỉ hình đó, bố cục đã chốt không tự đổi tỉ lệ, xung đột hỏi cách xử lý; thêm hình có chọn tỉ lệ + xem trước vị trí; chuột phải gán cánh/vách/đợt... ngay trên bản vẽ 2D"
 }

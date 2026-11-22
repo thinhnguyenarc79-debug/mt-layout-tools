@@ -33,7 +33,7 @@ class TestPlacement < Minitest::Test
     _project, pg = VS.page('view_props' => { 'front' => pin(50, 70, 0, true, 'scale_override' => 15, 'scale_locked' => true) })
     vp = AL::ProjectStore.clean_page(JSON.parse(JSON.generate(pg)))['view_props']['front']
     assert_equal({ 'scale_override' => 15, 'scale_locked' => true, 'position_locked' => true, 'placement_mode' => 'manual',
-                   'x_mm' => 50.0, 'y_mm' => 70.0, 'sheet' => 0 }, vp)
+                   'x_mm' => 50.0, 'y_mm' => 70.0, 'sheet' => 0, 'base_scale' => nil }, vp)
   end
 
   def test_5_cap_nhat_va_trien_khai_lai_giu_vi_tri

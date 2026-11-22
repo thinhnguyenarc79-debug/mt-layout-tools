@@ -182,6 +182,7 @@ module MTDesign
 
               v = pr.result
               l, t = v[:origin]
+              v[:part_rects] = part_rects(cap, v[:fn], l, t, variant) unless k == 'iso'
               if variant == :all && @doors.any? && %w[front back].include?(k)
                 db = cap.door_boxes(v[:fn])
                 v[:door_boxes] = db.map { |d| b = d['box']; [b[0] - l, b[1] - l, b[2] - t, b[3] - t] }
@@ -296,6 +297,24 @@ module MTDesign
           end
         end
 
+        # Khung chiếu của từng bộ phận trên hình (để bấm chuột phải gán bộ phận ngay trên bản vẽ 2D):
+        # [đường dẫn instance, x0, x1, y0, y1, độ sâu mặt trước] – độ sâu lớn = gần người xem.
+        def part_rects(cap, fn, l, t, variant)
+          Array(cap.parts).first(4000).filter_map do |pt|
+            next if variant == :nodoor && pt['role'] == 'door'
+
+            b = pt['bounds']
+            next unless b && b.all? { |lo, hi| lo.finite? && hi.finite? }
+
+            pts = b[0].product(b[1], b[2]).map { |c| fn.call(c) }
+            us = pts.map { |p| p[0] }
+            vs = pts.map { |p| p[1] }
+            next if us.max - us.min < 0.5 && vs.max - vs.min < 0.5
+
+            [pt['path'], (us.min - l).round(1), (us.max - l).round(1), (vs.min - t).round(1), (vs.max - t).round(1), pts.map { |p| p[2] }.max.round(1)]
+          end
+        end
+
         # ---------- chi tiết phóng to ----------
         def details(job)
           Array(@pg['details']).each do |det|
@@ -385,6 +404,8 @@ module MTDesign
             v[:fixed_scale] = (vp && vp['scale_override']) || v[:own_scale]
             v[:scale_locked] = vp ? vp['scale_locked'] == true : false
             v[:position_locked] = vp ? vp['position_locked'] == true : false
+            # tỉ lệ theo trang đã chốt lúc dàn trang (để thêm hình / đổi trang không làm tỉ lệ hình cũ nhảy)
+            v[:base_scale] = vp && !vp['scale_override'] && vp['base_scale'] ? vp['base_scale'] : nil
             # có toạ độ đã chốt (tự động hoặc chỉnh tay) -> đặt đúng chỗ đó, không tính lại bố cục
             v[:pin] = vp && vp['x_mm'] && vp['y_mm'] ? { x: vp['x_mm'], y: vp['y_mm'], sheet: vp['sheet'].to_i, manual: vp['placement_mode'] == 'manual' } : nil
             # chưa có toạ độ nhưng đã định tờ -> đặt vào chỗ trống của ĐÚNG tờ đó (không tự đưa về A-01)
@@ -439,6 +460,7 @@ module MTDesign
             info['parts_total'] = Array(@parts).length
             info['missing_roles'] = Array(@missing)
             info['door_items'] = group.select { |v| v[:door_items] }.map { |v| [v[:key], v[:door_items]] }.to_h
+            info['part_hits'] = group.select { |v| v[:part_rects] && !v[:detail] }.map { |v| [v[:key], v[:part_rects]] }.to_h
             info['view_props'] = @pg['view_props'] || {}
             info['view_keys'] = group.map { |v| v[:key] }
             info['sheet'] = idx

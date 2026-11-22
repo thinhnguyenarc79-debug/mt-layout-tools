@@ -24,10 +24,11 @@ module PS
   # Giống giao diện: hình chưa có toạ độ -> chốt vị trí plugin vừa đặt (trạng thái "Tự động")
   def freeze(pg, outs)
     vp = pg['view_props'] || {}
-    AL::Sheet.layout_of(outs).each do |k, (x, y, sh)|
+    AL::Sheet.layout_of(outs).each do |k, (x, y, sh, _w, _h, sc)|
       next if vp[k] && vp[k]['x_mm']
 
       vp[k] = (vp[k] || {}).merge('placement_mode' => 'auto', 'x_mm' => x, 'y_mm' => y, 'sheet' => sh)
+      vp[k]['base_scale'] = sc unless vp[k]['scale_override']
     end
     pg['view_props'] = AL::ProjectStore.clean_view_props(vp)
   end
