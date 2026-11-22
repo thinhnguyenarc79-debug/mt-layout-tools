@@ -4,7 +4,7 @@
 require 'minitest/autorun'
 require 'json'
 ROOT = File.expand_path('../src/mt_layout_tools/auto_layout/core', __dir__)
-%w[pdf job geometry hidden_fill canvas dimension_engine part_classifier cabinet_recognizer section_engine annotation_engine detail_engine construction_detail door_symbols door_swing manual_dim sheet project_store page_build].each { |f| require File.join(ROOT, f) }
+%w[pdf job geometry hidden_fill canvas dimension_engine part_classifier cabinet_recognizer section_engine annotation_engine detail_engine construction_detail door_symbols door_swing manual_dim dim_edit sheet project_store page_build].each { |f| require File.join(ROOT, f) }
 
 AL = MTDesign::LayoutTools::AutoLayout
 

@@ -190,3 +190,16 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 .mdrow.on { background: #FFF1E6; }
 .mdrow.bad .nm, .mdrow.bad b { color: #C0392B; }
 .mdrow button { padding: 0 5px; min-width: 0; }
+
+/* chỉnh DIM & chữ (v2.15) */
+#paper g.dim { cursor: pointer; }
+#paper g.dim .mdhit { pointer-events: all; }
+#paper g.dim.sel path, #paper g.mdim.sel path { stroke: #E8590C; }
+#paper g.dim.sel text, #paper g.mdim.sel text { fill: #E8590C; }
+#paper g.dimgrips .grip { cursor: move; }
+#stage.editmode #paper g.vcap { cursor: move; }
+#stage.editmode #paper g.vcap:hover text { fill: #E8590C; }
+.mdrow.gone .nm { text-decoration: line-through; color: #9AA09C; }
+.inl { position: fixed; z-index: 60; display: flex; gap: 3px; background: #fff; border: 1px solid #E8590C; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.inl input, .inl textarea { font: 14px 'Segoe UI', Arial, sans-serif; border: 1px solid #ccc; padding: 2px 4px; }
+.inl button { padding: 0 6px; }

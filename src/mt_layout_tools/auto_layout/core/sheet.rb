@@ -228,7 +228,38 @@ module MTDesign
           cv.group('class' => 'view', 'data-key' => v[:key]) do
             fr = ctx[:info]['frames'][v[:key]] = draw_view(cv, v, ctx[:scale], x, base, page)
             draw_manual_dims(cv, v, fr, page, ctx[:info])
+            collect_dims(v, ctx[:info])
           end
+        end
+
+        # Danh sách DIM của hình gửi giao diện (DIM tự động từng đoạn + DIM thủ công, cùng khuôn dữ liệu) + cảnh báo
+        # DIM chồng tên hình (chỉ báo, không tự dời gì).
+        def collect_dims(v, info)
+          key = v[:key].to_s
+          r = v[:dim_result] || {}
+          auto = Array(r['segs'])
+          man = Array((info['manual_dims'] || {})[key])
+          (info['dims'] ||= {})[key] = auto + man
+          (info['dim_orphans'] ||= {})[key] = r['orphans'] unless Array(r['orphans']).empty?
+          if Array(r['orphans']).any?
+            add_note(info, "#{v[:name]}: #{r['orphans'].length} DIM tự động đã chỉnh không còn khớp hình học mới (mốc đo đã đổi) – xem bảng DIM & CHỮ.")
+          end
+          (info['captions'] ||= {})[key] = v[:caption_box].map { |n| n.round(2) } if v[:caption_box]
+          cb = v[:caption_box]
+          return unless cb
+
+          hit = (auto + man).select do |d|
+            g = d['geo']
+            next false if !g || d['hidden'] || d['deleted']
+
+            boxes = [g['tbox']].compact
+            boxes << [[g['la'][0], g['lb'][0]].min, [g['la'][1], g['lb'][1]].min - 0.3, [g['la'][0], g['lb'][0]].max, [g['la'][1], g['lb'][1]].max + 0.3] if g['la'] && g['lb']
+            boxes.any? { |b| b[0] < cb[2] && cb[0] < b[2] && b[1] < cb[3] && cb[1] < b[3] }
+          end
+          return if hit.empty?
+
+          (info['dim_caption_hits'] ||= {})[key] = hit.map { |d| d['id'] }
+          add_note(info, "DIM CHỒNG TÊN HÌNH #{v[:name]}: #{hit.map { |d| d['text'] || d['label'] }.first(6).join(', ')} – kéo DIM hoặc tên hình ra (chế độ ✎ DIM & Chữ).")
         end
 
         # DIM thủ công 2 điểm: vẽ sau Auto DIM, độc lập với nó (tắt Auto DIM vẫn hiện; chạy lại Auto DIM không xoá).
@@ -437,9 +468,10 @@ module MTDesign
             section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
             detail_marks(cv, v, tf, s, page['details'])
           end
+          v[:dim_result] = nil
           if v[:dims] && page.fetch('dims', true)
             obs = Array(@obstacles) + note_boxes(cv, page['notes'])
-            dpg = page.merge('obstacles' => obs)
+            dpg = page.merge('obstacles' => obs, 'dim_over' => (page['dim_over'] || {})[v[:key].to_s] || {})
             if v[:swing_pad]
               # dãy DIM lùi ra ngoài cung mở cánh
               doff = (page['dimoff'] || {}).dup
@@ -450,13 +482,13 @@ module MTDesign
               doff[v[:key].to_s] = o
               dpg['dimoff'] = doff
             end
-            r = DimensionEngine.draw(cv, v, s, ox, oy, dpg)
+            r = v[:dim_result] = DimensionEngine.draw(cv, v, s, ox, oy, dpg)
             if r['moved']
               cv.text('DIM chi tiết: xem MẶT ĐỨNG THÁO CÁNH / MẶT CẮT', ox + vw / 2, base + 13.5, 2.0, 0, GREY)
             end
           end
           @obstacles = nil
-          caption(cv, v[:name], "TL 1:#{s}", ox + vw / 2, base + pad[3] + 6.5)
+          v[:caption_box] = draw_caption(cv, v, s, ox + vw / 2, base + pad[3] + 6.5, (page['captions'] || {})[v[:key].to_s])
           cv.text('BẢN XEM TRƯỚC – CHƯA KHỬ ĐỦ NÉT KHUẤT', ox + vw / 2, base + 13.5, 2.2, 0, '#B3261E') if v[:level].to_i >= 3
           [ox, oy, s, v[:w], v[:h]].map { |n| n.round(4) }
         end
@@ -793,6 +825,38 @@ module MTDesign
             x -= w + 3.8 if %w[leader material].include?(n['type']) && n['x'].to_f < n['tx'].to_f
             [x - 0.5, n['y'].to_f - n['size'].to_f, x + w + 4.5, n['y'].to_f + h]
           end
+        end
+
+        # Tên hình + dòng tỉ lệ, có chỉnh sửa của người dùng (page['captions'][key]): tên hiển thị riêng (loại hình nội bộ
+        # giữ nguyên), dòng tỉ lệ luôn theo tỉ lệ thật, dời/cỡ/màu/căn lề/đậm. Nhóm SVG "vcap" để chọn & sửa trên giấy.
+        # Trả về hộp chữ [x0, y0, x1, y1] (mm giấy) – để báo DIM chồng tên hình.
+        def draw_caption(cv, v, s, cx, cy, c)
+          c ||= {}
+          name = c['text'].to_s.strip.empty? ? v[:name].to_s : c['text'].to_s
+          scale = DimEdit.scale_line(c['scale_text'], s)
+          size = (c['size'] || 3.6).to_f
+          ss = size * 2.4 / 3.6
+          col = c['color'] || BLUE
+          bold = c['bold'] == true
+          cx += c['dx'].to_f
+          cy += c['dy'].to_f
+          tw = cv.text_w(name, size)
+          sw = cv.text_w(scale, ss)
+          shift = { 'left' => ->(w) { w / 2 }, 'right' => ->(w) { -w / 2 } }[c['align']] || ->(_w) { 0 }
+          cv.group('class' => 'vcap', 'data-key' => v[:key].to_s) do
+            nx = cx + shift.call(tw)
+            cv.text(name, nx, cy, size, 0, col, bold)
+            cv.line([nx - tw / 2, cy + size * 2.4 / 3.6], [nx + tw / 2, cy + size * 2.4 / 3.6], 0.3, col)
+            cv.text(scale, cx + shift.call(sw), cy + size * 4.6 / 3.6, ss, 0, col)
+            if cv.fmt == :svg # vùng bấm chọn (trong suốt) – không in ra PDF
+              x0 = [nx - tw / 2, cx + shift.call(sw) - sw / 2].min
+              x1 = [nx + tw / 2, cx + shift.call(sw) + sw / 2].max
+              cv.rect(x0 - 0.5, cy - size / 2 - 0.4, x1 - x0 + 1.0, size * 4.6 / 3.6 + ss / 2 + size / 2 + 0.8, 'transparent', nil)
+            end
+          end
+          x0 = [cx + shift.call(tw) - tw / 2, cx + shift.call(sw) - sw / 2].min
+          x1 = [cx + shift.call(tw) + tw / 2, cx + shift.call(sw) + sw / 2].max
+          [x0, cy - size / 2, x1, cy + size * 4.6 / 3.6 + ss / 2]
         end
 
         def caption(cv, name, scale, cx, cy)

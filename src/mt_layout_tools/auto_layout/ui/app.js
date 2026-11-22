@@ -549,7 +549,7 @@
   }
 
   // ---------------- menu chuột phải trên hình chiếu ----------------
-  function hideCtx() { var m = $('ctxMenu'); m.hidden = true; m.innerHTML = ''; }
+  function hideCtx() { var m = $('ctxMenu'); if (!m.hidden) S.ctxClosed = Date.now(); m.hidden = true; m.innerHTML = ''; }
   function showCtx(x, y, k, door) {
     var m = $('ctxMenu'), lk = scaleLocked(k), v = vprops(k) || {}, eff = effScale(k), h = [];
     var it = function (act, label, opts) {
@@ -948,8 +948,17 @@
   $('stage').addEventListener('contextmenu', function (e) {
     e.preventDefault();
     if (!S.info) { hideCtx(); return; }
-    var gmd = e.target.closest && e.target.closest('g.mdim');
-    if (gmd) { S.selMd = { key: gmd.getAttribute('data-key'), id: gmd.getAttribute('data-id') }; renderMd(); showMdCtx(e.clientX, e.clientY, S.selMd.key, S.selMd.id); return; }
+    if (e.target.classList && e.target.classList.contains('grip') && dimSel()) { showDimCtx(e.clientX, e.clientY, dimSel()); return; }
+    var gmd = e.target.closest && e.target.closest('g.dim, g.mdim');
+    if (gmd) {
+      var sl2 = selOf(gmd), already = (S.selDims || []).some(function (x) { return x.key === sl2.key && x.id === sl2.id; });
+      if (!already) selectDim(sl2, false);
+      showDimCtx(e.clientX, e.clientY, sl2); return;
+    }
+    var gcp = e.target.closest && e.target.closest('g.vcap');
+    if (gcp) { S.selCap = gcp.getAttribute('data-key'); textCtx(e.clientX, e.clientY, 'cap', S.selCap); return; }
+    var gnt = e.target.closest && e.target.closest('g.note');
+    if (gnt) { var nn = (page().notes || []).filter(function (x) { return x.id === gnt.getAttribute('data-id'); })[0]; if (nn) { S.selNote = nn.id; highlight(); textCtx(e.clientX, e.clientY, 'note', nn); return; } }
     var mk = e.target.closest && e.target.closest('g.detmark');
     if (mk) { S.ctxParts = []; S.selDet = +mk.getAttribute('data-det'); overlay(); showCtx(e.clientX, e.clientY, 'det:' + mk.getAttribute('data-det'), null); return; }
     var g = e.target.closest && e.target.closest('g.view');
@@ -965,6 +974,14 @@
     showCtx(e.clientX, e.clientY, k, doorAt(k, ptc));
   });
   $('stage').addEventListener('dblclick', function (e) {
+    if (!S.info) return;
+    if (e.target.classList && e.target.classList.contains('grip') && dimSel()) { dimDialog(dimSel()); return; } // grip nằm đè lên số DIM
+    var gd = e.target.closest && e.target.closest('g.dim, g.mdim');
+    if (gd && (S.tool === 'select' || S.tool === 'edit')) { var sl3 = selOf(gd); selectDim(sl3, false); dimDialog(sl3); return; }
+    var gc = e.target.closest && e.target.closest('g.vcap');
+    if (gc && (S.tool === 'edit' || S.tool === 'select')) { editCaption(gc.getAttribute('data-key')); return; }
+    var gnn = e.target.closest && e.target.closest('g.note');
+    if (gnn) { var nn2 = (page().notes || []).filter(function (x) { return x.id === gnn.getAttribute('data-id'); })[0]; if (nn2) { editNoteInline(nn2); return; } }
     var g = e.target.closest && e.target.closest('g.view');
     if (!g || !S.info || S.tool !== 'select') return;
     var k = g.getAttribute('data-key'), d = doorAt(k, toPaper(e));
@@ -1567,7 +1584,7 @@
       var nd = { id: newId('md'), a: md.a, b: md.b, axis: md.axis, kind: md.kind || cfg.kind, side: md.side, off: md.off, ra: null, rb: null, hidden: false };
       if (list.some(function (d) { return sig(d) === sig(nd); })) { msg('Đã có DIM thủ công đo đúng hai điểm này – không tạo trùng.', 'warn'); S.md = { step: 0 }; mdPrevGroup(); return; }
       snapshot(); list.push(nd);
-      S.selMd = { key: md.key, id: nd.id }; S.md = { step: 0 };
+      S.selDims = [{ key: md.key, id: nd.id, origin: 'manual' }]; S.md = { step: 0 };
       changed(); requestRender(true); renderMd();
       msg('Đã thêm DIM ' + mdLabel(MDIM.value(nd.a, nd.b, nd.axis)) + ' mm trên ' + viewName(md.key) + '. Bấm tiếp để thêm DIM khác, ESC để thoát.', 'ok');
       if (S.mdGap) { S.mdGap = false; setTool('select'); }
@@ -1581,21 +1598,12 @@
     var p = page(); if (!p || !p.manual_dims || !p.manual_dims[k]) return;
     snapshot(); p.manual_dims[k] = p.manual_dims[k].filter(function (d) { return d.id !== id; });
     if (!p.manual_dims[k].length) delete p.manual_dims[k];
-    if (S.selMd && S.selMd.id === id) S.selMd = null;
+    S.selDims = (S.selDims || []).filter(function (x) { return x.id !== id; });
     changed(); requestRender(true); renderMd(); msg('Đã xóa DIM thủ công (↶ để hoàn tác).', 'ok');
   }
   // tay nắm 2 đầu DIM đang chọn (kéo để đổi điểm bám)
-  function mdHandles() {
-    var svg = $('paper').querySelector('svg'); if (!svg) return;
-    svg.querySelectorAll('g.mdhandles').forEach(function (x) { x.remove(); });
-    svg.querySelectorAll('g.mdim').forEach(function (x) { x.classList.toggle('sel', !!S.selMd && x.getAttribute('data-id') === S.selMd.id); });
-    var sm = S.selMd, d = sm && mdFind(sm.key, sm.id); if (!d || d.hidden || !frameOf(sm.key)) return;
-    var g = svgEl('g', { 'class': 'mdhandles' }, svg);
-    ['a', 'b'].forEach(function (end) {
-      var c = mdToP(sm.key, d[end]);
-      svgEl('circle', { cx: c[0], cy: c[1], r: 1.0, 'class': 'mdh', 'data-end': end, fill: '#FFFFFF', stroke: '#E8590C', 'stroke-width': 0.35 }, g);
-    });
-  }
+  function mdHandles() { dimGrips(); }
+
   // nhận lại DIM đã bám theo model (điểm, liên kết, trạng thái) – không tạo bước hoàn tác
   function mdSync(info) {
     var p = page(); if (!p || !info.manual_dims) return;
@@ -1613,20 +1621,29 @@
     var box = $('mdList'); if (!box) return;
     var c = mdCfg(), p = page();
     $('mdKind').value = c.kind; $('mdAxis').value = c.axis; $('mdSide').value = c.side; $('mdSnap').checked = c.snap;
-    var keys = (S.info && S.info.view_keys) || [], rows = [];
+    var keys = (S.info && S.info.view_keys) || [], rows = [], selk = (S.selDims || []).map(function (x) { return x.key + '|' + x.id; });
     keys.forEach(function (k) {
-      mdList(k).forEach(function (d) {
-        var r = mdResult(k, d.id), bad = r && r.status === 'broken';
-        var on = S.selMd && S.selMd.id === d.id;
-        rows.push('<div class="it mdrow' + (on ? ' on' : '') + (bad ? ' bad' : '') + '" data-k="' + esc(k) + '" data-id="' + esc(d.id) + '">' +
-          '<span class="nm">' + esc(mdLabel(MDIM.value(d.a, d.b, d.axis))) + ' mm</span><span class="auto">' + esc(MD_AXES[d.axis]) + (d.kind === 'clear' ? ' · thông thủy' : '') + ' · ' + esc(viewName(k)) +
-          (bad ? ' · <b>MẤT LIÊN KẾT</b>' : '') + '</span>' +
-          '<button class="mdhide" title="' + (d.hidden ? 'Hiện' : 'Ẩn') + ' DIM">' + (d.hidden ? '◌' : '◉') + '</button><button class="mddel" title="Xóa DIM">✕</button></div>');
+      // DIM tự động đã chỉnh (đã sửa / ẩn / xóa / khóa) + DIM thủ công
+      dimsOf(k).forEach(function (d) {
+        if (d.origin === 'auto' && !d.user_modified) return;
+        var on = selk.indexOf(k + '|' + d.id) >= 0, bad = d.status === 'broken';
+        var tags = [d.origin === 'auto' ? 'tự động đã sửa' : 'thủ công', MD_AXES[d.axis]];
+        if (d.origin === 'manual' && mdFind(k, d.id) && mdFind(k, d.id).kind === 'clear') tags.push('thông thủy');
+        if (d.text_override) tags.push('chữ riêng'); if (d.deleted) tags.push('ĐÃ XÓA'); else if (d.hidden) tags.push('ẩn'); if (d.locked) tags.push('khóa');
+        rows.push('<div class="it mdrow' + (on ? ' on' : '') + (bad ? ' bad' : '') + (d.deleted ? ' gone' : '') + '" data-k="' + esc(k) + '" data-id="' + esc(d.id) + '" data-o="' + d.origin + '">' +
+          '<span class="nm">' + esc(mdLabel(d.value)) + ' mm</span><span class="auto">' + esc(tags.join(' · ')) + ' · ' + esc(viewName(k)) + (bad ? ' · <b>MẤT LIÊN KẾT</b>' : '') + '</span>' +
+          (d.deleted ? '<button class="mdundel" title="Khôi phục DIM đã xóa">↺</button>' : '<button class="mdhide" title="' + (d.hidden ? 'Hiện' : 'Ẩn') + ' DIM">' + (d.hidden ? '◌' : '◉') + '</button>') +
+          (d.origin === 'auto' ? '<button class="mdrestore" title="Khôi phục tự động">⟲</button>' : '<button class="mddel" title="Xóa DIM">✕</button>') + '</div>');
+      });
+      ((S.info && S.info.dim_orphans && S.info.dim_orphans[k]) || []).forEach(function (id) {
+        rows.push('<div class="it mdrow bad" data-k="' + esc(k) + '" data-id="' + esc(id) + '" data-o="orphan"><span class="nm">?</span><span class="auto">DIM tự động đã sửa không còn khớp hình học mới (' + esc(id) + ') · ' + esc(viewName(k)) +
+          '</span><button class="mdrestore" title="Bỏ chỉnh sửa cũ">✕</button></div>');
       });
     });
-    box.innerHTML = rows.length ? rows.join('') : '<p class="hint">Chưa có DIM thủ công trên tờ này.</p>';
-    if (p) mdHandles();
+    box.innerHTML = rows.length ? rows.join('') : '<p class="hint">Chưa có DIM thủ công hay DIM tự động đã chỉnh trên tờ này. Bấm vào một DIM trên giấy để chọn & sửa.</p>';
+    if (p) dimGrips();
   }
+
   ['mdKind', 'mdAxis', 'mdSide'].forEach(function (id) {
     $(id).addEventListener('change', function () { var c = mdCfg(); c[{ mdKind: 'kind', mdAxis: 'axis', mdSide: 'side' }[id]] = this.value; markDirty(); });
   });
@@ -1635,37 +1652,330 @@
   $('mdGapBtn').onclick = function () { mdStart(true); };
   $('mdList').addEventListener('click', function (e) {
     var row = e.target.closest('.mdrow'); if (!row) return;
-    var k = row.dataset.k, id = row.dataset.id;
+    var k = row.dataset.k, id = row.dataset.id, org = row.dataset.o, sl = { key: k, id: id, origin: org === 'manual' ? 'manual' : 'auto' };
+    if (org === 'orphan' || e.target.classList.contains('mdrestore')) { dimRestore(sl); return; }
     if (e.target.classList.contains('mddel')) { mdDelete(k, id); return; }
-    if (e.target.classList.contains('mdhide')) { mdEdit(k, id, function (d) { d.hidden = !d.hidden; }); return; }
-    S.selMd = { key: k, id: id }; renderMd();
+    if (e.target.classList.contains('mdundel')) { dimChange(sl, function (o) { o.deleted = null; }, 'Đã khôi phục DIM đã xóa.'); return; }
+    if (e.target.classList.contains('mdhide')) { var di = dimInfo(k, id); dimChange(sl, function (o) { o.hidden = !(di && di.hidden) || null; if (sl.origin === 'manual') o.hidden = !!o.hidden; }); return; }
+    selectDim(sl, e.shiftKey);
   });
-  function showMdCtx(x, y, k, id) {
-    var m = $('ctxMenu'), d = mdFind(k, id); if (!d) return;
-    var r = mdResult(k, id), h = [];
-    var it = function (act, label, on) { h.push('<div class="it' + (on ? ' on' : '') + '" data-act="' + act + '">' + esc(label) + '</div>'); };
-    h.push('<div class="hd">DIM thủ công ' + esc(mdLabel(MDIM.value(d.a, d.b, d.axis))) + ' mm<small>' + esc(viewName(k)) + (r && r.status === 'broken' ? ' · MẤT LIÊN KẾT' : '') + '</small></div>');
-    h.push('<div class="lb">Phương đo</div>'); ['v', 'h', 'a'].forEach(function (a) { it('ax:' + a, MD_AXES[a], d.axis === a); });
-    if (d.axis === 'v') { h.push('<div class="lb">Vị trí DIM</div>'); it('sd:l', 'Bên trái', d.side === 'l'); it('sd:r', 'Bên phải', d.side === 'r'); }
-    if (d.axis === 'h') { h.push('<div class="lb">Vị trí DIM</div>'); it('sd:t', 'Phía trên', d.side === 't'); it('sd:b', 'Phía dưới', d.side === 'b'); }
+
+
+  // ---------------- CHỈNH DIM & CHỮ (v2.15) ----------------
+  // DIM tự động: mỗi đoạn là 1 đối tượng (info.dims[key][i], id ổn định "chuỗi:đầu-cuối"); chỉnh sửa lưu ở
+  // page.dim_over[key][id] và Ruby áp lại sau mỗi lần dựng. DIM thủ công: page.manual_dims. Hai loại dùng chung
+  // công cụ: chọn, grip điểm đầu/cuối, grip đường DIM, grip chữ, bảng thuộc tính, menu chuột phải, Undo/Redo.
+  // Chữ: tên hình (page.captions[key]) và chú thích (page.notes) – nhấp đúp để sửa, kéo để dời, khóa được.
+  var SIDE_OF = { top: 't', left: 'l', right: 'r' };
+  function dimsOf(k) { return (S.info && S.info.dims && S.info.dims[k]) || []; }
+  function dimInfo(k, id) { return dimsOf(k).filter(function (d) { return d.id === id; })[0]; }
+  function dimSel() { return S.selDims && S.selDims.length ? S.selDims[S.selDims.length - 1] : null; }
+  function selOf(g) { return { key: g.getAttribute('data-key'), id: g.getAttribute('data-id'), origin: g.classList.contains('mdim') ? 'manual' : 'auto' }; }
+  function overOf(k, id, create) {
+    var p = page(); if (!p) return null;
+    if (!p.dim_over) { if (!create) return null; p.dim_over = {}; }
+    if (!p.dim_over[k]) { if (!create) return null; p.dim_over[k] = {}; }
+    if (!p.dim_over[k][id]) { if (!create) return null; p.dim_over[k][id] = {}; }
+    return p.dim_over[k][id];
+  }
+  function dimObj(sel, create) { return sel.origin === 'manual' ? mdFind(sel.key, sel.id) : overOf(sel.key, sel.id, create); }
+  function tidyOver(k, id) {
+    var p = page(), o = p && p.dim_over && p.dim_over[k] && p.dim_over[k][id]; if (!o) return;
+    Object.keys(o).forEach(function (f) { if (o[f] == null || o[f] === false || o[f] === '') delete o[f]; });
+    if (!Object.keys(o).length) delete p.dim_over[k][id];
+    if (!Object.keys(p.dim_over[k]).length) delete p.dim_over[k];
+  }
+  function dimLocked(sel) { var d = dimInfo(sel.key, sel.id); return !!(d && d.locked); }
+  function dimChange(sel, fn, note) {
+    snapshot();
+    var o = dimObj(sel, true); if (!o) { S.undo.pop(); return; }
+    fn(o, dimInfo(sel.key, sel.id) || {});
+    if (sel.origin === 'auto') tidyOver(sel.key, sel.id);
+    changed(); requestRender(true); renderMd(); if (note) msg(note, 'ok');
+  }
+  function dimName(d) { return (d && (d.text || d.label || mdLabel(d.value || 0))) + ' mm'; }
+  function selectDim(sel, add) {
+    S.selNote = null; S.selCap = null;
+    if (!add) S.selDims = [sel];
+    else {
+      S.selDims = S.selDims || [];
+      var i = S.selDims.map(function (x) { return x.key + '|' + x.id; }).indexOf(sel.key + '|' + sel.id);
+      if (i >= 0) S.selDims.splice(i, 1); else S.selDims.push(sel);
+    }
+    renderMd();
+  }
+  function clearDimSel() { if (S.selDims && S.selDims.length) { S.selDims = []; renderMd(); } }
+  // grip: điểm đầu/cuối (tròn), đường DIM (vuông), chữ (thoi). DIM khóa: grip xám, không kéo được.
+  function dimGrips() {
+    var svg = $('paper').querySelector('svg'); if (!svg) return;
+    svg.querySelectorAll('g.dimgrips').forEach(function (x) { x.remove(); });
+    var keys = (S.selDims || []).map(function (x) { return x.key + '|' + x.id; });
+    svg.querySelectorAll('g.dim, g.mdim').forEach(function (x) { x.classList.toggle('sel', keys.indexOf(x.getAttribute('data-key') + '|' + x.getAttribute('data-id')) >= 0); });
+    var sel = dimSel(), d = sel && dimInfo(sel.key, sel.id); if (!d || !d.geo || d.hidden || d.deleted || (S.selDims || []).length > 1) return;
+    var G = d.geo, g = svgEl('g', { 'class': 'dimgrips' }, svg), col = d.locked ? '#9AA09C' : '#E8590C', r = 0.9;
+    [['a', G.pa], ['b', G.pb]].forEach(function (x) { if (x[1]) svgEl('circle', { cx: x[1][0], cy: x[1][1], r: r, 'class': 'grip', 'data-g': x[0], fill: '#FFF', stroke: col, 'stroke-width': 0.35 }, g); });
+    if (G.la && G.lb) { var m = [(G.la[0] + G.lb[0]) / 2, (G.la[1] + G.lb[1]) / 2]; svgEl('rect', { x: m[0] - r, y: m[1] - r, width: 2 * r, height: 2 * r, 'class': 'grip', 'data-g': 'line', fill: '#FFF', stroke: col, 'stroke-width': 0.35 }, g); }
+    if (G.tc) svgEl('path', { d: 'M' + G.tc[0] + ' ' + (G.tc[1] - 1.2) + 'l1.2 1.2l-1.2 1.2l-1.2 -1.2z', 'class': 'grip', 'data-g': 'text', fill: '#FFF', stroke: col, 'stroke-width': 0.3 }, g);
+  }
+  // kéo grip (hoặc chọn từ menu rồi nhấp): start = điểm giấy bắt đầu; xem trước bằng dịch nhóm SVG / nét cam
+  function gripStart(sel, gk, start, pick) {
+    if (dimLocked(sel)) { msg('DIM đang khóa – chuột phải → Mở khóa DIM để chỉnh.', 'warn'); return null; }
+    var d = dimInfo(sel.key, sel.id); if (!d) return null;
+    return { mode: 'grip', sel: sel, g: gk, start: start, pick: !!pick, d: d, alt: false };
+  }
+  function gripEls(dr) {
+    var svg = $('paper').querySelector('svg'), d = dr.d, sel = dr.sel, q = '[data-key="' + sel.key + '"][data-id="' + sel.id + '"]';
+    if (dr.g === 'text') return Array.prototype.slice.call(svg.querySelectorAll('g.dim' + q + ' text, g.mdim' + q + ' text'));
+    if (sel.origin === 'auto' && !d.detached && !d.custom_anchor && !dr.alt)
+      return Array.prototype.slice.call(svg.querySelectorAll('g.dimset[data-key="' + sel.key + '"][data-chain="' + d.chain + '"]'));
+    return Array.prototype.slice.call(svg.querySelectorAll('g.dim' + q + ', g.mdim' + q));
+  }
+  function gripMove(dr, e) {
+    var pt = toPaper(e), dx = pt[0] - dr.start[0], dy = pt[1] - dr.start[1], d = dr.d; dr.alt = e.altKey;
+    dr.pt = pt; dr.moved = dr.moved || Math.abs(dx) + Math.abs(dy) > 0.3;
+    var gp = mdPrevGroup(); if (!gp) return;
+    if (dr.g === 'a' || dr.g === 'b') {
+      var sn = mdSnap(dr.sel.key, pt); dr.sn = sn; mdMarker(gp, dr.sel.key, sn);
+      var na = dr.g === 'a' ? sn.p : d.a, nb = dr.g === 'b' ? sn.p : d.b, A = mdToP(dr.sel.key, na), B = mdToP(dr.sel.key, nb);
+      svgEl('path', { d: 'M' + A[0] + ' ' + A[1] + 'L' + B[0] + ' ' + B[1], stroke: '#E8590C', 'stroke-width': 0.25, 'stroke-dasharray': '1 0.6' }, gp);
+      $('stInfo').textContent = 'Bắt: ' + MD_TYPES[sn.type] + ' · số đo mới ' + mdLabel(MDIM.value(na, nb, d.axis)) + ' mm';
+      return;
+    }
+    var tx = dr.g === 'text' ? [dx, dy] : (d.axis === 'h' ? [0, dy] : [dx, 0]);
+    gripEls(dr).forEach(function (el) { el.setAttribute('transform', 'translate(' + tx[0] + ' ' + tx[1] + ')'); });
+    $('stInfo').textContent = dr.g === 'text' ? 'Dời chữ DIM – số đo không đổi' : (dr.sel.origin === 'auto' && !d.detached && !d.custom_anchor && !dr.alt ? 'Kéo CẢ CHUỖI DIM (giữ Alt để chỉ kéo đoạn này)' : 'Dời đường DIM – số đo không đổi');
+  }
+  function gripCommit(dr) {
+    var pg0 = mdPrevGroup(); if (pg0) pg0.remove();
+    var d = dr.d, sel = dr.sel, p = page();
+    if (!dr.moved && !dr.pick) { gripEls(dr).forEach(function (el) { el.removeAttribute('transform'); }); return; }
+    var dx = dr.pt[0] - dr.start[0], dy = dr.pt[1] - dr.start[1];
+    if (dr.g === 'a' || dr.g === 'b') {
+      if (!dr.sn) return;
+      var np = dr.sn.p, other = dr.g === 'a' ? 'b' : 'a', mo = sel.origin === 'manual' && mdFind(sel.key, sel.id);
+      if (mo && mo.kind === 'clear' && S.info.snap[sel.key]) { // DIM thông thủy: điểm mới tự về mặt tấm hướng vào khoảng hở
+        var pr = dr.g === 'a' ? MDIM.refineClear(S.info.snap[sel.key].segs, np, d.b, d.axis) : MDIM.refineClear(S.info.snap[sel.key].segs, d.a, np, d.axis);
+        np = dr.g === 'a' ? pr[0] : pr[1];
+      }
+      if (Math.hypot(np[0] - d[other][0], np[1] - d[other][1]) < 0.5) { msg('Hai điểm bám trùng nhau – giữ nguyên.', 'err'); requestRender(true); return; }
+      dimChange(sel, function (o) {
+        if (sel.origin === 'auto' && !o.a) { o.a = d.a; o.b = d.b; }
+        o[dr.g] = np; o['r' + dr.g] = null; // điểm bám mới: gắn lại liên kết bộ phận; đầu kia giữ nguyên
+      }, 'Đã đổi điểm ' + (dr.g === 'a' ? 'đầu' : 'cuối') + ' – số đo mới ' + mdLabel(MDIM.value(dr.g === 'a' ? np : d.a, dr.g === 'b' ? np : d.b, d.axis)) + ' mm (các DIM khác không đổi).');
+      return;
+    }
+    if (dr.g === 'text') {
+      var base = [d.tdx || 0, d.tdy || 0];
+      if (sel.origin === 'auto' && d.tdx == null && d.tdy == null && d.tid && p.dimtext && p.dimtext[sel.key + '|' + d.tid]) base = p.dimtext[sel.key + '|' + d.tid].slice();
+      dimChange(sel, function (o) { o.tdx = Math.round((base[0] + dx) * 100) / 100; o.tdy = Math.round((base[1] + dy) * 100) / 100; }, 'Đã dời chữ DIM – số đo không đổi.');
+      return;
+    }
+    var dl = d.axis === 'h' ? dy : dx;
+    if (sel.origin === 'auto' && !d.detached && !d.custom_anchor && !dr.alt) { // cả chuỗi: dời bằng offset chuỗi (như bản cũ)
+      snapshot(); p.dimoff = p.dimoff || {}; p.dimoff[sel.key] = p.dimoff[sel.key] || {};
+      p.dimoff[sel.key][d.side] = Math.max(-400, Math.min(400, Math.round(((p.dimoff[sel.key][d.side] || 0) + dl) * 100) / 100));
+      changed(); requestRender(true); msg('Đã dời cả chuỗi DIM – số đo không đổi, hình không đổi.', 'ok'); return;
+    }
+    var side = sel.origin === 'auto' ? SIDE_OF[d.side] : d.side, f = frameOf(sel.key);
+    var sg = side === 'l' || side === 't' ? -1 : 1;
+    dimChange(sel, function (o) {
+      if (side === 'in') o.off = Math.round(((+d.off || 0) + dl * f[2]) * 10) / 10;
+      else if (d.axis === 'a') o.off = Math.round(((+d.off || 0) + dl) * 10) / 10;
+      else o.off = Math.round(((+d.off || 0) + sg * dl) * 100) / 100;
+    }, sel.origin === 'auto' ? 'Đã tách & dời riêng đoạn DIM này khỏi chuỗi – số đo không đổi.' : 'Đã dời đường DIM – số đo không đổi.');
+  }
+  function dimRestore(sel) {
+    if (sel.origin === 'auto') {
+      snapshot(); var p = page();
+      if (p.dim_over && p.dim_over[sel.key]) { delete p.dim_over[sel.key][sel.id]; if (!Object.keys(p.dim_over[sel.key]).length) delete p.dim_over[sel.key]; }
+      changed(); requestRender(true); renderMd(); msg('Đã khôi phục DIM tự động (điểm bám, vị trí, nội dung).', 'ok');
+    } else dimChange(sel, function (o) { ['text', 'tdx', 'tdy', 'size', 'bold'].forEach(function (f) { delete o[f]; }); }, 'Đã khôi phục chữ DIM về số đo thật.');
+  }
+  function dimDelete(sel) {
+    if (sel.origin === 'manual') { mdDelete(sel.key, sel.id); return; }
+    if (dimLocked(sel)) { msg('DIM đang khóa.', 'warn'); return; }
+    dimChange(sel, function (o) { o.deleted = true; }, 'Đã xóa đoạn DIM tự động – dựng lại không tạo lại (khôi phục ở bảng DIM & CHỮ, hoặc ↶).');
+    S.selDims = [];
+  }
+  function dimDialog(sel) {
+    var d = dimInfo(sel.key, sel.id); if (!d) return;
+    dialog('DIM ' + (sel.origin === 'auto' ? 'tự động' : 'thủ công') + ' – ' + viewName(sel.key),
+      '<label>Giá trị đo thật (chỉ đọc)</label><input type="text" value="' + esc(mdLabel(d.value)) + ' mm" readonly>' +
+      '<label>Nội dung hiển thị <small>(để trống = số đo thật; &lt;&gt; = chèn số đo thật, vd. "&lt;&gt; TT")</small></label><input id="ddText" type="text" value="' + esc(d.text_override || '') + '">' +
+      '<div class="row"><div><label>Cỡ chữ (mm)</label><input id="ddSize" type="number" min="1" max="12" step="0.1" value="' + (d.size || 2.2) + '"></div>' +
+      '<div><label>Dời chữ X</label><input id="ddTx" type="number" step="0.5" value="' + (d.tdx || 0) + '"></div><div><label>Dời chữ Y</label><input id="ddTy" type="number" step="0.5" value="' + (d.tdy || 0) + '"></div></div>' +
+      '<div class="checks"><label><input id="ddBold" type="checkbox"' + (d.bold ? ' checked' : '') + '> Chữ đậm</label><label><input id="ddHide" type="checkbox"' + (d.hidden ? ' checked' : '') + '> Ẩn DIM</label><label><input id="ddLock" type="checkbox"' + (d.locked ? ' checked' : '') + '> Khóa DIM</label></div>' +
+      '<p class="hint">Phương đo: ' + MD_AXES[d.axis] + ' · ' + (d.origin === 'auto' ? (d.user_modified ? 'đã chỉnh tay' : 'tự động') + (d.detached ? ' · đã tách khỏi chuỗi' : '') : 'thủ công') +
+      (d.status === 'broken' ? ' · <b style="color:#C0392B">MẤT LIÊN KẾT</b>' : '') + '. Font: Noto Sans (nhúng PDF, đủ dấu tiếng Việt).</p>',
+      [['Khôi phục tự động', function () { dimRestore(sel); }], ['Hủy'], ['Lưu', function () {
+        var t = $('ddText').value.trim(), sz = parseFloat($('ddSize').value), tx = parseFloat($('ddTx').value) || 0, ty = parseFloat($('ddTy').value) || 0;
+        var bold = $('ddBold').checked, hide = $('ddHide').checked, lock = $('ddLock').checked;
+        dimChange(sel, function (o) {
+          o.text = t || null; o.size = sz && Math.abs(sz - 2.2) > 0.01 ? Math.max(1, Math.min(12, sz)) : null;
+          o.tdx = tx || null; o.tdy = ty || null; o.bold = bold || null; o.hidden = hide || null; o.locked = lock || null;
+          if (sel.origin === 'manual') { o.hidden = hide; o.locked = lock; o.bold = bold; }
+        }, 'Đã lưu DIM – số đo thật vẫn là ' + mdLabel(d.value) + ' mm.');
+      }, 'gold']]);
+    setTimeout(function () { var i = $('ddText'); if (i) { i.focus(); i.onkeydown = function (ev) { if (ev.key === 'Enter') $('dlgBtns').lastChild.click(); }; } }, 30);
+  }
+  function showDimCtx(x, y, sel) {
+    var m = $('ctxMenu'), d = dimInfo(sel.key, sel.id); if (!d) return;
+    var h = [], it = function (act, label, on) { h.push('<div class="it' + (on ? ' on' : '') + '" data-act="' + act + '">' + esc(label) + '</div>'); };
+    var multi = (S.selDims || []).length > 1;
+    h.push('<div class="hd">DIM ' + (d.origin === 'auto' ? 'tự động' : 'thủ công') + ' ' + esc(dimName(d)) + '<small>' + esc(viewName(sel.key)) + (d.locked ? ' · đã khóa' : '') + (d.status === 'broken' ? ' · MẤT LIÊN KẾT' : '') + '</small></div>');
+    it('prop', 'Chỉnh DIM… (thuộc tính)');
+    if (!d.locked) { it('pa', 'Sửa điểm đầu'); it('pb', 'Sửa điểm cuối'); it('pline', 'Di chuyển đường DIM'); it('ptext', 'Chỉnh vị trí chữ'); }
+    it('ptxt', 'Sửa nội dung chữ…');
+    if (d.origin === 'auto') {
+      if (d.detached) it('attach', 'Đưa về chuỗi DIM'); else if (!d.locked) it('detach', 'Tách khỏi chuỗi (dời riêng đoạn này)');
+    }
+    if (multi) it('merge', 'Gộp ' + S.selDims.length + ' DIM đã chọn thành 1 chuỗi thẳng hàng');
+    it('restore', 'Khôi phục tự động');
     h.push('<div class="sep"></div>');
-    it('kind', d.kind === 'clear' ? 'Loại: thông thủy ✓' : 'Loại: tự do');
-    it('hide', 'Ẩn DIM'); it('del', 'Xóa DIM');
+    it('hide', d.hidden ? 'Hiện DIM' : 'Ẩn DIM'); it('del', 'Xóa DIM'); it('lock', d.locked ? 'Mở khóa DIM' : 'Khóa DIM');
+    h.push('<div class="sep"></div>'); it('mdadd', 'Thêm đoạn DIM bị thiếu (2 điểm)'); it('viewmenu', 'Menu hình chiếu…');
     m.innerHTML = h.join(''); m.hidden = false;
     m.style.left = Math.max(4, Math.min(x, window.innerWidth - m.offsetWidth - 4)) + 'px';
     m.style.top = Math.max(4, Math.min(y, window.innerHeight - m.offsetHeight - 4)) + 'px';
     m.onclick = function (e) {
       var a = e.target.closest('[data-act]'); if (!a) return; var act = a.dataset.act; hideCtx();
-      if (act === 'del') mdDelete(k, id);
-      else if (act === 'hide') mdEdit(k, id, function (dd) { dd.hidden = true; }, 'Đã ẩn DIM – hiện lại ở bảng DIM THỦ CÔNG.');
-      else if (act === 'kind') mdEdit(k, id, function (dd) { dd.kind = dd.kind === 'clear' ? 'free' : 'clear'; });
-      else if (act.indexOf('ax:') === 0) mdEdit(k, id, function (dd) {
-        var na = act.slice(3); if (dd.axis === na) return; dd.axis = na;
-        if (na === 'v') { dd.side = 'l'; dd.off = 4.5; } else if (na === 'h') { dd.side = 't'; dd.off = 4.5; } else { dd.side = 'in'; dd.off = -4.5; }
-      }, 'Đã đổi phương đo – giá trị tính lại từ hai điểm bám.');
-      else if (act.indexOf('sd:') === 0) mdEdit(k, id, function (dd) { dd.side = act.slice(3); if (dd.off < 1.5) dd.off = 4.5; });
+      var G = d.geo || {};
+      if (act === 'prop' || act === 'ptxt') dimDialog(sel);
+      else if (act === 'pa' || act === 'pb') { S.pickGrip = gripStart(sel, act.slice(1), [0, 0], true); msg('Nhấp vào cạnh / điểm mới cho điểm ' + (act === 'pa' ? 'đầu' : 'cuối') + ' (Smart Snap). ESC để hủy.', ''); }
+      else if (act === 'pline' && G.la) { S.pickGrip = gripStart(sel, 'line', [(G.la[0] + G.lb[0]) / 2, (G.la[1] + G.lb[1]) / 2], true); msg('Nhấp vị trí mới của đường DIM. ESC để hủy.', ''); }
+      else if (act === 'ptext' && G.tc) { S.pickGrip = gripStart(sel, 'text', G.tc.slice(), true); msg('Nhấp vị trí mới của chữ DIM. ESC để hủy.', ''); }
+      else if (act === 'detach') dimChange(sel, function (o) { o.off = d.off; }, 'Đã tách đoạn khỏi chuỗi – kéo grip vuông để dời riêng.');
+      else if (act === 'attach') dimChange(sel, function (o) { delete o.off; }, 'Đã đưa đoạn về chuỗi DIM.');
+      else if (act === 'merge') dimMerge();
+      else if (act === 'restore') dimRestore(sel);
+      else if (act === 'hide') dimChange(sel, function (o) { o.hidden = !d.hidden; }, d.hidden ? 'Đã hiện DIM.' : 'Đã ẩn DIM – hiện lại ở bảng DIM & CHỮ.');
+      else if (act === 'del') dimDelete(sel);
+      else if (act === 'lock') dimChange(sel, function (o) { o.locked = !d.locked; }, d.locked ? 'Đã mở khóa DIM.' : 'Đã khóa DIM – không kéo/sửa được cho tới khi mở khóa.');
+      else if (act === 'mdadd') mdStart(false);
+      else if (act === 'viewmenu') { S.ctxParts = []; showCtx(x, y, sel.key, null); }
     };
   }
+  // Gộp các DIM đã chọn (cùng phương, cùng phía) về 1 hàng thẳng: lấy vị trí của DIM chọn đầu tiên.
+  function dimMerge() {
+    var list = (S.selDims || []).map(function (s) { return { s: s, d: dimInfo(s.key, s.id) }; }).filter(function (x) { return x.d; });
+    if (list.length < 2) return;
+    var t = list[0], side = function (x) { return x.s.origin === 'auto' ? SIDE_OF[x.d.side] : x.d.side; };
+    if (list.some(function (x) { return x.s.key !== t.s.key || x.d.axis !== t.d.axis || side(x) !== side(t); })) { msg('Chỉ gộp được các DIM cùng hình, cùng phương đo và cùng phía.', 'err'); return; }
+    if (list.some(function (x) { return x.d.locked; })) { msg('Có DIM đang khóa trong nhóm chọn.', 'warn'); return; }
+    snapshot();
+    list.forEach(function (x) {
+      if (x === t) return;
+      var o = dimObj(x.s, true); o.off = t.d.off; if (x.s.origin === 'manual') o.side = side(t);
+      if (x.s.origin === 'auto') tidyOver(x.s.key, x.s.id);
+    });
+    changed(); requestRender(true); msg('Đã gộp ' + list.length + ' DIM thành 1 chuỗi thẳng hàng (cách mép ' + mdLabel(t.d.off) + ' mm giấy).', 'ok');
+  }
+  // nhận lại liên kết bộ phận Ruby vừa gắn cho đoạn tự động đã đổi điểm bám (không tạo bước hoàn tác)
+  function dimSync(info) {
+    var p = page(); if (!p || !p.dim_over || !info.dims) return;
+    var dirty = false;
+    Object.keys(info.dims).forEach(function (k) {
+      info.dims[k].forEach(function (d) {
+        if (d.origin !== 'auto' || !d.custom_anchor) return;
+        var o = p.dim_over[k] && p.dim_over[k][d.id]; if (!o) return;
+        ['a', 'b', 'ra', 'rb'].forEach(function (f) { if (d[f] !== undefined && JSON.stringify(o[f]) !== JSON.stringify(d[f])) { o[f] = d[f]; dirty = true; } });
+      });
+    });
+    if (dirty) markDirty();
+  }
+
+  // ---- chữ: tên hình & chú thích ----
+  function capObj(k, create) {
+    var p = page(); if (!p) return null;
+    if (!p.captions) { if (!create) return null; p.captions = {}; }
+    if (!p.captions[k]) { if (!create) return null; p.captions[k] = {}; }
+    return p.captions[k];
+  }
+  function capChange(k, fn, note) {
+    snapshot(); var c = capObj(k, true); fn(c);
+    Object.keys(c).forEach(function (f) { if (c[f] == null || c[f] === false || c[f] === '') delete c[f]; });
+    if (!Object.keys(c).length) delete page().captions[k];
+    changed(); requestRender(true); if (note) msg(note, 'ok');
+  }
+  function noteChange(n, fn, note) { snapshot(); fn(n); renderNotes(); changed(); requestRender(true); if (note) msg(note, 'ok'); }
+  // Ô sửa chữ ngay trên bản vẽ: Enter / ✓ lưu, ESC hủy (nhiều dòng: Shift+Enter xuống dòng)
+  function inlineEdit(rect, value, multi, done) {
+    closeInline();
+    var w = document.createElement('div'); w.className = 'inl'; w.id = 'inlEdit';
+    var inp = document.createElement(multi ? 'textarea' : 'input'); if (!multi) inp.type = 'text';
+    inp.value = value; var ok = document.createElement('button'); ok.textContent = '✓'; ok.title = 'Lưu (Enter)';
+    var no = document.createElement('button'); no.textContent = '✕'; no.title = 'Hủy (ESC)';
+    w.appendChild(inp); w.appendChild(ok); w.appendChild(no);
+    Object.assign(w.style, { left: Math.max(4, rect.left - 4) + 'px', top: Math.max(4, rect.top - 6) + 'px' });
+    inp.style.width = Math.max(160, rect.width + 40) + 'px'; if (multi) inp.style.height = Math.max(40, rect.height + 16) + 'px';
+    document.body.appendChild(w); inp.focus(); inp.select();
+    var fin = function (save) { var v = inp.value; closeInline(); if (save) done(v); };
+    ok.onmousedown = function (e) { e.preventDefault(); fin(true); };
+    no.onmousedown = function (e) { e.preventDefault(); fin(false); };
+    inp.onkeydown = function (e) {
+      if (e.key === 'Enter' && !(multi && e.shiftKey)) { e.preventDefault(); fin(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fin(false); }
+    };
+  }
+  function closeInline() { var w = $('inlEdit'); if (w) w.remove(); }
+  function capRect(k) { var g = $('paper').querySelector('g.vcap[data-key="' + k + '"] text'); return g ? g.getBoundingClientRect() : { left: 200, top: 200, width: 100, height: 20 }; }
+  function editCaption(k) {
+    var c = capObj(k) || {};
+    if (c.locked) { msg('Tên hình đang khóa – chuột phải → Mở khóa.', 'warn'); return; }
+    inlineEdit(capRect(k), c.text || viewName(k), false, function (v) {
+      v = v.trim();
+      capChange(k, function (cc) { cc.text = v && v !== viewName(k) ? v : null; }, v && v !== viewName(k) ? 'Đã đổi tên hiển thị "' + v + '" (loại hình nội bộ giữ nguyên: ' + viewName(k) + ').' : 'Đã trả tên hình về mặc định.');
+    });
+  }
+  function editScaleLine(k) {
+    var c = capObj(k) || {};
+    dialog('Dòng tỷ lệ – ' + viewName(k), '<label>Nội dung <small>({TL} = tỷ lệ thật của hình, vd. "TỶ LỆ {TL}")</small></label><input id="slText" type="text" value="' + esc(c.scale_text || 'TL {TL}') + '">' +
+      '<p class="hint">Tỷ lệ in luôn lấy từ tỷ lệ thật (hiện 1:' + effScale(k) + '). Gõ cứng tỷ lệ khác (vd. 1:50) sẽ tự được thay bằng tỷ lệ thật – không in sai tỷ lệ bản vẽ.</p>',
+      [['Mặc định', function () { capChange(k, function (cc) { cc.scale_text = null; }); }], ['Hủy'], ['Lưu', function () {
+        var v = $('slText').value.trim(); capChange(k, function (cc) { cc.scale_text = v && v !== 'TL {TL}' ? v : null; }, 'Đã sửa dòng tỷ lệ (vẫn bám tỷ lệ thật).');
+      }, 'gold']]);
+  }
+  function editNoteInline(n) {
+    if (n.locked) { msg('Chú thích đang khóa – chuột phải → Mở khóa.', 'warn'); return; }
+    var g = $('paper').querySelector('g.note[data-id="' + n.id + '"]'), r = g ? g.getBoundingClientRect() : { left: 200, top: 200, width: 100, height: 20 };
+    inlineEdit(r, n.text, n.type !== 'text', function (v) { noteChange(n, function (x) { x.text = v; }, 'Đã sửa nội dung chú thích.'); });
+  }
+  function colorDialog(cur, done) {
+    dialog('Màu chữ', '<input id="clr" type="color" value="' + (cur || '#1E1E1E') + '">', [['Hủy'], ['Lưu', function () { done($('clr').value); }, 'gold']]);
+  }
+  function textCtx(x, y, kind, ref) {
+    var m = $('ctxMenu'), h = [], it = function (act, label, on) { h.push('<div class="it' + (on ? ' on' : '') + '" data-act="' + act + '">' + esc(label) + '</div>'); };
+    var c = kind === 'cap' ? (capObj(ref) || {}) : ref, size = kind === 'cap' ? (c.size || 3.6) : c.size;
+    var align = c.align || (kind === 'cap' ? 'center' : 'left');
+    h.push('<div class="hd">' + (kind === 'cap' ? 'Tên hình – ' + esc(viewName(ref)) : 'Chú thích') + '<small>' + (c.locked ? 'đã khóa' : (kind === 'cap' && (c.text || c.dx || c.dy) ? 'đã tùy chỉnh' : '')) + '</small></div>');
+    it('edit', 'Sửa nội dung'); if (kind === 'cap') it('scale', 'Sửa dòng tỷ lệ…');
+    it('move', 'Di chuyển (nhấp vị trí mới)');
+    h.push('<div class="lb">Cỡ chữ (mm)</div><div class="grid">' + [2, 2.5, 3, 3.6, 4.5, 5, 6, 8].map(function (n) { return '<span data-act="sz:' + n + '" class="' + (Math.abs(n - size) < 0.01 ? 'on' : '') + '">' + n + '</span>'; }).join('') + '</div>');
+    h.push('<div class="lb">Căn lề</div><div class="grid">' + [['left', 'Trái'], ['center', 'Giữa'], ['right', 'Phải']].map(function (a) { return '<span data-act="al:' + a[0] + '" class="' + (align === a[0] ? 'on' : '') + '">' + a[1] + '</span>'; }).join('') + '</div>');
+    it('color', 'Màu…'); it('bold', 'Chữ đậm', !!c.bold); it('font', 'Font: Noto Sans (nhúng PDF, tiếng Việt)');
+    h.push('<div class="sep"></div>'); it('lock', c.locked ? 'Mở khóa vị trí chữ' : 'Khóa vị trí chữ'); it('reset', 'Khôi phục mặc định');
+    m.innerHTML = h.join(''); m.hidden = false;
+    m.style.left = Math.max(4, Math.min(x, window.innerWidth - m.offsetWidth - 4)) + 'px';
+    m.style.top = Math.max(4, Math.min(y, window.innerHeight - m.offsetHeight - 4)) + 'px';
+    m.onclick = function (e) {
+      var a = e.target.closest('[data-act]'); if (!a) return; var act = a.dataset.act; hideCtx();
+      var ch = function (fn, note) { if (kind === 'cap') capChange(ref, fn, note); else noteChange(ref, fn, note); };
+      if (act === 'font') return;
+      if (act === 'edit') { if (kind === 'cap') editCaption(ref); else editNoteInline(ref); }
+      else if (act === 'scale') editScaleLine(ref);
+      else if (act === 'move') { if (c.locked) { msg('Chữ đang khóa.', 'warn'); return; } S.pickText = { kind: kind, ref: ref }; msg('Nhấp vị trí mới cho chữ. ESC để hủy.', ''); }
+      else if (act.indexOf('sz:') === 0) ch(function (o) { o.size = +act.slice(3); });
+      else if (act.indexOf('al:') === 0) ch(function (o) { o.align = act.slice(3) === (kind === 'cap' ? 'center' : 'left') ? null : act.slice(3); });
+      else if (act === 'color') colorDialog(c.color, function (v) { ch(function (o) { o.color = v; }); });
+      else if (act === 'bold') ch(function (o) { o.bold = !o.bold || null; });
+      else if (act === 'lock') ch(function (o) { o.locked = !o.locked || null; }, c.locked ? 'Đã mở khóa vị trí chữ.' : 'Đã khóa vị trí chữ.');
+      else if (act === 'reset') {
+        if (kind === 'cap') capChange(ref, function (o) { Object.keys(o).forEach(function (f) { delete o[f]; }); }, 'Đã trả tên hình, dòng tỷ lệ và vị trí về mặc định.');
+        else noteChange(ref, function (o) { o.size = 2.5; o.color = '#1E1E1E'; delete o.align; delete o.bold; delete o.locked; }, 'Đã trả kiểu chữ chú thích về mặc định.');
+      }
+    };
+  }
+  function capPaperPos(k) { var b = S.info && S.info.captions && S.info.captions[k]; return b ? [(b[0] + b[2]) / 2, b[1]] : null; }
 
   // ---------------- trang & dựng ----------------
   function openPage(id, j) {
@@ -1683,7 +1993,8 @@
   }
   function showSvg(svg, info) {
     S.info = info; S.mdIdx = {};
-    mdSync(info);
+    mdSync(info); dimSync(info);
+    if (S.selDims) S.selDims = S.selDims.filter(function (x) { return !!dimInfo(x.key, x.id); });
     var pp = page();
     if (pp && info.sheets && pp.sheet_count !== info.sheets) {
       pp.sheet_count = info.sheets; markDirty(); // số tờ thật thay đổi (đổi tỉ lệ...) -> danh sách cập nhật ngay
@@ -1734,7 +2045,7 @@
       hit.setAttribute('fill', 'transparent'); g.insertBefore(hit, g.firstChild);
     });
     // vùng bấm rộng cho DIM thủ công (nét DIM rất mảnh)
-    svgEl.querySelectorAll('g.mdim').forEach(function (g) {
+    svgEl.querySelectorAll('g.mdim, g.dim').forEach(function (g) {
       try {
         var bb = g.getBBox(), hr = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         hr.setAttribute('x', bb.x - 0.8); hr.setAttribute('y', bb.y - 0.8); hr.setAttribute('width', bb.width + 1.6); hr.setAttribute('height', bb.height + 1.6);
@@ -1785,6 +2096,17 @@
   }, { passive: false });
   $('stage').addEventListener('mousedown', function (e) {
     if (e.button === 0 && !spaceDown && S.cur && S.tool === 'mdim') { mdClick(e); e.preventDefault(); return; }
+    if (e.button === 0 && S.pickGrip) { // "Sửa điểm đầu/cuối", "Di chuyển đường DIM", "Chỉnh vị trí chữ" từ menu
+      var pk = S.pickGrip; S.pickGrip = null; pk.pt = toPaper(e); pk.moved = true;
+      if (pk.g === 'a' || pk.g === 'b') pk.sn = mdSnap(pk.sel.key, pk.pt);
+      gripCommit(pk); e.preventDefault(); return;
+    }
+    if (e.button === 0 && S.pickText) {
+      var pt3 = toPaper(e), tk = S.pickText; S.pickText = null;
+      if (tk.kind === 'cap') { var cp0 = capPaperPos(tk.ref); if (cp0) capChange(tk.ref, function (c) { c.dx = Math.round(((c.dx || 0) + pt3[0] - cp0[0]) * 100) / 100; c.dy = Math.round(((c.dy || 0) + pt3[1] - cp0[1]) * 100) / 100; }, 'Đã dời tên hình.'); }
+      else noteChange(tk.ref, function (n) { n.x = pt3[0]; n.y = pt3[1]; }, 'Đã dời chú thích.');
+      e.preventDefault(); return;
+    }
     if (e.button === 0 && !spaceDown && S.cur && /^(text|mtext|leader|material|detail)$/.test(S.tool)) {
       var pt = toPaper(e);
       if (S.tool === 'text' || S.tool === 'mtext') { addNote(S.tool, pt); setTool('select'); }
@@ -1820,28 +2142,40 @@
     var dmk = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.detmark');
     if (dmk) { S.selDet = +dmk.getAttribute('data-det'); overlay(); msg('Kéo các ô vuông ở góc để chỉnh lại vùng trích (vùng lưu theo toạ độ của hình nguồn).', ''); e.preventDefault(); return; }
     if (e.button === 0 && S.selDet && !(e.target.closest && e.target.closest('g.edhandles'))) { S.selDet = null; overlay(); }
-    var mdh = e.button === 0 && e.target.classList && e.target.classList.contains('mdh');
-    if (mdh && S.selMd) {
-      drag = { mode: 'mdend', end: e.target.getAttribute('data-end'), key: S.selMd.key, id: S.selMd.id };
+    var grip = e.button === 0 && e.target.classList && e.target.classList.contains('grip');
+    if (grip && dimSel()) {
+      var gd0 = gripStart(dimSel(), e.target.getAttribute('data-g'), toPaper(e), false); if (gd0) drag = gd0;
       e.preventDefault(); e.stopPropagation(); return;
     }
-    var gm = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.mdim');
-    if (gm) {
-      S.selMd = { key: gm.getAttribute('data-key'), id: gm.getAttribute('data-id') }; S.selNote = null; renderMd();
-      drag = { mode: 'mdline', key: S.selMd.key, id: S.selMd.id, x: e.clientX, y: e.clientY, moved: false };
-      msg('Kéo để dời đường DIM (giá trị không đổi). Kéo chấm tròn ở 2 đầu để đổi điểm bám. Delete để xóa, chuột phải để đổi phương đo / ẩn.', '');
+    var gdim = e.button === 0 && (S.tool === 'select' || S.tool === 'edit') && !spaceDown && e.target.closest && e.target.closest('g.dim, g.mdim');
+    if (gdim) {
+      var sl = selOf(gdim); selectDim(sl, e.shiftKey); S.sel = null; highlight();
+      if (!e.shiftKey) {
+        var onTxt = e.target.tagName === 'text' || !!(e.target.closest && e.target.closest('g.dimtxt'));
+        var gd1 = gripStart(sl, onTxt ? 'text' : 'line', toPaper(e), false); if (gd1) drag = gd1;
+      }
+      msg('DIM ' + (sl.origin === 'auto' ? 'tự động' : 'thủ công') + ' đã chọn: kéo grip ○ để đổi điểm bám, □ để dời đường DIM' + (sl.origin === 'auto' ? ' (cả chuỗi; giữ Alt = riêng đoạn)' : '') +
+          ', ◇ để dời chữ. Nhấp đúp = thuộc tính, Delete = xóa, chuột phải = menu. Shift+nhấp để chọn nhiều.', '');
       e.preventDefault(); e.stopPropagation(); return;
     }
-    if (e.button === 0 && S.selMd) { S.selMd = null; renderMd(); }
-    var gn = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.note');
+    if (e.button === 0 && S.selDims && S.selDims.length && !(e.target.closest && e.target.closest('g.dimgrips'))) clearDimSel();
+    var gcap = e.button === 0 && S.tool === 'edit' && !spaceDown && e.target.closest && e.target.closest('g.vcap');
+    if (gcap) {
+      var ck = gcap.getAttribute('data-key'); S.selCap = ck;
+      if ((capObj(ck) || {}).locked) { msg('Tên hình đang khóa vị trí – chuột phải → Mở khóa.', 'warn'); e.preventDefault(); return; }
+      drag = { mode: 'cap', key: ck, g: gcap, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+      msg('Kéo để dời tên hình (chỉ chữ di chuyển). Nhấp đúp để sửa nội dung.', ''); e.preventDefault(); e.stopPropagation(); return;
+    }
+    var gn = e.button === 0 && (S.tool === 'select' || S.tool === 'edit') && !spaceDown && e.target.closest && e.target.closest('g.note');
     if (gn) {
       S.selNote = gn.getAttribute('data-id'); S.sel = null; highlight(); renderNotes();
       var n = selNote(), pt2 = toPaper(e);
+      if (n && n.locked) { msg('Chú thích đang khóa vị trí – chuột phải → Mở khóa.', 'warn'); e.preventDefault(); return; }
       var nearTip = n && (n.type === 'leader' || n.type === 'material') && Math.hypot(pt2[0] - n.tx, pt2[1] - n.ty) < 2.5;
       drag = { mode: nearTip ? 'tip' : 'note', g: gn, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
       e.preventDefault(); return;
     }
-    var ds = e.button === 0 && S.tool === 'select' && !spaceDown && e.target.closest && e.target.closest('g.dimset');
+    var ds = e.button === 0 && (S.tool === 'select' || S.tool === 'edit') && !spaceDown && e.target.closest && e.target.closest('g.dimset');
     if (ds) {
       drag = { mode: 'dim', g: ds, key: ds.getAttribute('data-key'), side: ds.getAttribute('data-side'), x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
       e.preventDefault(); e.stopPropagation(); return;
@@ -1861,6 +2195,7 @@
     }
     if (e.button !== 0) return;
     S.sel = g.getAttribute('data-key'); S.selNote = null; highlight(); renderNotes();
+    if (S.tool === 'edit') { e.preventDefault(); return; } // chế độ CHỈNH DIM & CHỮ: không kéo hình chiếu
     if (posLocked(S.sel)) { msg(viewName(S.sel) + ' đang khóa vị trí (chuột phải để mở khóa).', 'warn'); e.preventDefault(); return; }
     drag = { mode: 'move', g: g, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
     e.preventDefault();
@@ -1868,26 +2203,12 @@
   window.addEventListener('mousemove', function (e) {
     window.__lastX = e.clientX; window.__lastY = e.clientY;
     if (!drag && S.tool === 'mdim' && S.md) { mdMove(e); return; }
+    if (!drag && S.pickGrip) { gripMove(S.pickGrip, e); return; }
     if (!drag) return;
-    if (drag.mode === 'mdline' || drag.mode === 'mdend') {
-      var md0 = mdFind(drag.key, drag.id), gp = mdPrevGroup(), pq = toPaper(e); if (!md0 || !gp || !frameOf(drag.key)) return;
-      var tmp = JSON.parse(JSON.stringify(md0));
-      if (drag.mode === 'mdline') {
-        if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 2) drag.moved = true;
-        if (tmp.axis === 'a') {
-          var A0 = mdToP(drag.key, tmp.a), B0 = mdToP(drag.key, tmp.b), L0 = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]) || 1;
-          tmp.off = Math.round(((pq[0] - A0[0]) * -(B0[1] - A0[1]) / L0 + (pq[1] - A0[1]) * (B0[0] - A0[0]) / L0) * 10) / 10;
-        } else {
-          var pl0 = MDIM.placeLine(tmp.axis, frameOf(drag.key), pq, 'free', mdOthers(drag.key, tmp.axis, tmp.id), mdSpan(tmp.a, tmp.b, tmp.axis));
-          tmp.side = pl0.side; tmp.off = pl0.off;
-        }
-        drag.side = tmp.side; drag.off = tmp.off;
-      } else {
-        var sn0 = mdSnap(drag.key, pq); drag.sn = sn0; tmp[drag.end] = sn0.p; mdMarker(gp, drag.key, sn0);
-        $('stInfo').textContent = 'Bắt: ' + MD_TYPES[sn0.type] + ' · ' + mdLabel(MDIM.value(tmp.a, tmp.b, tmp.axis)) + ' mm';
-      }
-      mdDrawDim(gp, drag.key, tmp, '#E8590C');
-      return;
+    if (drag.mode === 'grip') { gripMove(drag, e); return; }
+    if (drag.mode === 'cap') {
+      drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
+      drag.g.setAttribute('transform', 'translate(' + drag.dx + ' ' + drag.dy + ')'); return;
     }
     if (drag.mode === 'pan') {
       S.panX = drag.px + e.clientX - drag.x; S.panY = drag.py + e.clientY - drag.y; applyView();
@@ -1916,20 +2237,10 @@
   window.addEventListener('mouseup', function () {
     if (!drag) return;
     var d = drag; drag = null; $('stage').classList.remove('panning');
-    if (d.mode === 'mdline' || d.mode === 'mdend') {
-      var pg0 = mdPrevGroup(); if (pg0) pg0.remove();
-      if (d.mode === 'mdline' && d.moved && d.side != null) {
-        mdEdit(d.key, d.id, function (x) { x.side = d.side; x.off = d.off; }, 'Đã dời đường DIM – giá trị đo giữ nguyên.');
-      } else if (d.mode === 'mdend' && d.sn) {
-        mdEdit(d.key, d.id, function (x) {
-          var np = d.sn.p, other = d.end === 'a' ? 'b' : 'a';
-          if (x.kind === 'clear' && S.info.snap[d.key]) {
-            var pair = d.end === 'a' ? MDIM.refineClear(S.info.snap[d.key].segs, np, x.b, x.axis) : MDIM.refineClear(S.info.snap[d.key].segs, x.a, np, x.axis);
-            np = d.end === 'a' ? pair[0] : pair[1];
-          }
-          x[d.end] = np; x['r' + d.end] = null; // gắn lại liên kết theo điểm bám mới
-        }, 'Đã đổi điểm bám – giá trị DIM cập nhật theo điểm mới.');
-      } else renderMd();
+    if (d.mode === 'grip') { gripCommit(d); return; }
+    if (d.mode === 'cap') {
+      if (Math.abs(d.dx) < 0.2 && Math.abs(d.dy) < 0.2) { d.g.removeAttribute('transform'); return; }
+      capChange(d.key, function (c) { c.dx = Math.round(((c.dx || 0) + d.dx) * 100) / 100; c.dy = Math.round(((c.dy || 0) + d.dy) * 100) / 100; }, 'Đã dời tên hình – hình chiếu và DIM không đổi.');
       return;
     }
     if (d.mode === 'dethandle') {
@@ -2000,11 +2311,19 @@
     if (e.key === 't' || e.key === 'T') setTool('text');
     if (e.key === 'l' || e.key === 'L') setTool('leader');
     if (e.key === 'd' || e.key === 'D') setTool('detail');
-    if (e.key === 'Escape') setTool('select');
+    if (e.key === 'Escape') {
+      // ESC lần lượt: đóng menu / hủy thao tác đang chọn điểm -> rồi mới thoát công cụ về Chọn
+      if (Date.now() - (S.ctxClosed || 0) < 80) return;
+      if (S.pickGrip || S.pickText) { S.pickGrip = null; S.pickText = null; var pg1 = mdPrevGroup(); if (pg1) pg1.remove(); msg('Đã hủy.', ''); return; }
+      setTool('select');
+    }
     if (e.key === 'PageDown') { e.preventDefault(); gotoRow(curRowIndex(sheetRows()) + 1); }
     if (e.key === 'PageUp') { e.preventDefault(); gotoRow(curRowIndex(sheetRows()) - 1); }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selNote) { e.preventDefault(); deleteNote(); return; }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && S.selMd) { e.preventDefault(); mdDelete(S.selMd.key, S.selMd.id); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.selDims && S.selDims.length) {
+      e.preventDefault(); var dl0 = S.selDims.slice(); dl0.forEach(function (x) { dimDelete(x); }); S.selDims = []; return;
+    }
+    if (e.key === 'e' || e.key === 'E') setTool('edit');
     if (e.key === 'm' || e.key === 'M') mdStart(false);
     if (S.sel && /^Arrow/.test(e.key)) {
       e.preventDefault();
@@ -2025,6 +2344,9 @@
   function setTool(t) {
     if (place) { place.el.remove(); place = null; }
     if (t === 'mdim') { S.md = { step: 0 }; S.mdGap = false; } else if (S.md) { mdCancel(); }
+    if (S.pickGrip || S.pickText) { S.pickGrip = null; S.pickText = null; var pgx = mdPrevGroup(); if (pgx) pgx.remove(); }
+    closeInline();
+    $('stage').classList.toggle('editmode', t === 'edit');
     S.tool = t;
     $('stage').classList.toggle('place', /^(text|mtext|leader|material|detail|mdim)$/.test(t));
     document.querySelectorAll('.tool').forEach(function (b) { b.classList.toggle('on', b.dataset.tool === t); });

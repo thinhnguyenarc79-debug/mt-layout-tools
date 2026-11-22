@@ -78,7 +78,7 @@ module MTDesign
             'off' => num(d['off'] || 4.5, side == 'in' ? -1.0e5 : -80, side == 'in' ? 1.0e5 : 80),
             'ra' => clean_ref(d['ra']), 'rb' => clean_ref(d['rb']),
             'hidden' => d['hidden'] == true
-          }
+          }.merge(DimEdit.clean_text_fields(d)) # nội dung hiển thị / dời chữ / cỡ / đậm / khóa (v2.15)
         end
 
         # page['manual_dims'] từ giao diện / tệp: bỏ mục hỏng, bỏ trùng (cùng 2 điểm + cùng phương đo).
@@ -232,6 +232,7 @@ module MTDesign
           end
           d['value'] = value(d).round(2)
           d['status'] = broken ? 'broken' : 'ok'
+          d['origin'] = 'manual'
           d
         end
 
@@ -246,7 +247,7 @@ module MTDesign
 
             col = d['status'] == 'broken' ? BROKEN : COLOR
             cv.group('class' => 'mdim', 'data-key' => v[:key].to_s, 'data-id' => d['id']) do
-              draw_one(cv, d, s, ox, oy, vw, vh, col, rnd)
+              d['geo'] = DimensionEngine.round_geo(draw_one(cv, d, s, ox, oy, vw, vh, col, rnd))
             end
             d
           end
@@ -271,16 +272,20 @@ module MTDesign
           end
         end
 
+        # Vẽ 1 DIM từ 2 điểm bám. d có thể kèm 'text' ("<>" = số đo thật), 'tdx'/'tdy', 'size', 'bold'.
+        # Trả về hình học giấy cho giao diện: pa/pb điểm bám, la/lb đầu đường DIM, tc tâm chữ, tbox hộp chữ.
         def draw_one(cv, d, s, ox, oy, vw, vh, col, rnd)
           a = [ox + d['a'][0] / s, oy + d['a'][1] / s]
           b = [ox + d['b'][0] / s, oy + d['b'][1] / s]
-          val = DimensionEngine.label(value(d), rnd)
+          val = DimEdit.display(d['text'], DimensionEngine.label(value(d), rnd))
           val = "#{val} (!)" if col == BROKEN
           dash = col == BROKEN ? [1.0, 0.6] : nil
-          if d['axis'] == 'a'
-            aligned(cv, a, b, d['off'].to_f, val, col, dash)
-            return
-          end
+          sz = d['size'] ? d['size'].to_f : TXT
+          tdx = d['tdx'].to_f
+          tdy = d['tdy'].to_f
+          bold = d['bold'] == true
+          return aligned(cv, a, b, d['off'].to_f, val, col, dash, sz, tdx, tdy, bold) if d['axis'] == 'a'
+
           lp = line_pos(d, s, ox, oy, vw, vh)
           k = d['axis'] == 'h' ? 1 : 0 # toạ độ giấy cố định của đường DIM
           pa = a.dup
@@ -291,20 +296,20 @@ module MTDesign
           [pa, pb].each { |p| tick(cv, p, col) }
           mid = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2]
           len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1])
-          tw = cv.text_w(val, TXT)
+          tw = cv.text_w(val, sz)
           small = len < tw + 0.8
           out = lp < (k.zero? ? a[0] : a[1]) ? -1 : 1 # phía ngoài: phía đường DIM so với vật
+          size = small && !d['size'] ? sz * 0.85 : sz
           if k.zero?
-            if small
-              cv.text(val, mid[0] + out * (tw / 2 + 1.6), mid[1], TXT * 0.85, 0, col)
-            else
-              cv.text(val, mid[0] + (out.negative? ? -1.5 : 1.7), mid[1], TXT, 90, col)
-            end
-          elsif small
-            cv.text(val, mid[0], mid[1] + out * 3.0, TXT * 0.85, 0, col)
+            c, ang = small ? [[mid[0] + out * (tw / 2 + 1.6), mid[1]], 0] : [[mid[0] + (out.negative? ? -1.5 : 1.7), mid[1]], 90]
           else
-            cv.text(val, mid[0], mid[1] + (out.negative? ? -1.5 : 2.4), TXT, 0, col)
+            c, ang = small ? [[mid[0], mid[1] + out * 3.0], 0] : [[mid[0], mid[1] + (out.negative? ? -1.5 : 2.4)], 0]
           end
+          c = [c[0] + tdx, c[1] + tdy]
+          cv.text(val, c[0], c[1], size, ang, col, bold)
+          tw = cv.text_w(val, size)
+          box = ang.zero? ? [c[0] - tw / 2, c[1] - size / 2, c[0] + tw / 2, c[1] + size / 2] : [c[0] - size / 2, c[1] - tw / 2, c[0] + size / 2, c[1] + tw / 2]
+          { 'pa' => a, 'pb' => b, 'la' => pa, 'lb' => pb, 'tc' => c, 'tbox' => box }
         end
 
         # Đường gióng: từ điểm đo (chừa khe 0.8 mm) tới quá đường DIM 1.5 mm.
@@ -325,9 +330,9 @@ module MTDesign
         end
 
         # DIM thẳng (đo đường chéo – chỉ khi người dùng chọn rõ phương "thẳng").
-        def aligned(cv, a, b, off, val, col, dash)
+        def aligned(cv, a, b, off, val, col, dash, sz = TXT, tdx = 0.0, tdy = 0.0, bold = false)
           l = Math.hypot(b[0] - a[0], b[1] - a[1])
-          return if l < 1.0e-6
+          return { 'pa' => a, 'pb' => b, 'la' => a, 'lb' => b, 'tc' => a } if l < 1.0e-6
 
           ux = (b[0] - a[0]) / l
           uy = (b[1] - a[1]) / l
@@ -344,8 +349,9 @@ module MTDesign
           ang = -Math.atan2(uy, ux) * 180 / Math::PI
           ang += 180 if ang > 90
           ang -= 180 if ang <= -90
-          m = [(pa[0] + pb[0]) / 2 + nx * sg * 1.6, (pa[1] + pb[1]) / 2 + ny * sg * 1.6]
-          cv.text(val, m[0], m[1], TXT, ang.round(2), col)
+          m = [(pa[0] + pb[0]) / 2 + nx * sg * 1.6 + tdx, (pa[1] + pb[1]) / 2 + ny * sg * 1.6 + tdy]
+          cv.text(val, m[0], m[1], sz, ang.round(2), col, bold)
+          { 'pa' => a, 'pb' => b, 'la' => pa, 'lb' => pb, 'tc' => m }
         end
       end
     end

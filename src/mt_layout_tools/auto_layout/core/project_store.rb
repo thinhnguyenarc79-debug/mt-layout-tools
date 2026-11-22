@@ -116,6 +116,9 @@ module MTDesign
             'copies' => clean_copies(pg['copies']),
             # DIM thủ công 2 điểm: { view_key => [dim] } – tách riêng Auto DIM, không bao giờ bị ghi đè khi dựng lại
             'manual_dims' => ManualDim.clean(pg['manual_dims']),
+            # chỉnh sửa DIM tự động từng đoạn + chữ tên hình (v2.15) – lưu riêng, áp lại sau mỗi lần dựng
+            'dim_over' => DimEdit.clean(pg['dim_over']),
+            'captions' => DimEdit.clean_captions(pg['captions']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
               next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2}|cp:\d{1,3})\z/) && v.is_a?(Array) && v.length == 2
 
@@ -149,7 +152,8 @@ module MTDesign
               end
               # và phân loại bộ phận gán tay (roles) – không ghi đè dữ liệu người dùng khi triển khai lại
               base = base.merge('view_props' => keep, 'door_symbols' => old['door_symbols'] || {}, 'roles' => old['roles'] || {},
-                                'manual_dims' => old['manual_dims'] || {},
+                                'manual_dims' => old['manual_dims'] || {}, 'dim_over' => old['dim_over'] || {},
+                                'captions' => old['captions'] || {}, 'dimoff' => old['dimoff'] || {}, 'dimtext' => old['dimtext'] || {},
                                 'offsets' => (old['offsets'] || {}).select { |k, _| keep[k] && keep[k]['position_locked'] })
               fresh = clean_page(base.merge('id' => old['id'], 'sheet_no' => old['sheet_no']))
               project['pages'][project['pages'].index(old)] = fresh
@@ -226,7 +230,7 @@ module MTDesign
             next unless v.is_a?(Hash) && k.to_s =~ /\A([a-z]+|sec:[A-Z]|det:\d{1,2}|cp:\d{1,3})\z/
 
             sides = v.select { |side, _| %w[top left right].include?(side.to_s) }
-                     .transform_values { |n| n.to_f.clamp(-60, 60).round(2) }
+                     .transform_values { |n| n.to_f.clamp(-400, 400).round(2) } # kéo cả chuỗi (cả xuống dưới hình)
             h[k.to_s] = sides unless sides.empty?
           end
         end

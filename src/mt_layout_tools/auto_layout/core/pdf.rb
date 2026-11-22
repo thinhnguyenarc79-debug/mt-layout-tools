@@ -36,7 +36,7 @@ module MTDesign
         [glyphs.join, advance / 1000.0]
       end
 
-      def text_command(text, anchor, size, angle, color, backed = false)
+      def text_command(text, anchor, size, angle, color, backed = false, bold = false)
         glyphs, width = font_run(text)
         r = angle * Math::PI / 180
         co, si = Math.cos(r), Math.sin(r)
@@ -48,7 +48,8 @@ module MTDesign
         text_start = "BT /F1 #{number(size)} Tf"
         run = "#{matrix} Tm <#{glyphs}> Tj ET"
         outline = backed ? "1 1 1 RG #{number(size * 0.17)} w 1 j\n#{text_start} 1 Tr #{run}\n" : ''
-        "q\n#{fill} rg\n#{outline}#{text_start} 0 Tr #{run}\nQ"
+        mode = bold ? "#{fill} RG #{number(size * 0.035)} w 1 j\n#{text_start} 2 Tr" : "#{text_start} 0 Tr"
+        "q\n#{fill} rg\n#{outline}#{mode} #{run}\nQ"
       end
 
       def xy(p)

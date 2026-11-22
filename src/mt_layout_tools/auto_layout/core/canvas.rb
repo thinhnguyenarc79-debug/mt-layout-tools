@@ -107,19 +107,21 @@ module MTDesign
         end
 
         # size: chiều cao chữ (mm); angle: độ, ngược chiều kim đồng hồ.
-        def text(s, cx, cy, size, angle, color)
+        # bold: chữ đậm (SVG font-weight; PDF tô + viền mảnh cùng màu vì chỉ nhúng 1 font Noto Sans).
+        def text(s, cx, cy, size, angle, color, bold = false)
           return if s.to_s.empty?
 
           if @fmt == :svg
             rot = angle.zero? ? '' : %( transform="rotate(#{n(-angle)} #{n(cx)} #{n(cy)})")
-            @out << %(<text x="#{n(cx)}" y="#{n(cy + size * 0.36)}" font-size="#{n(size)}" fill="#{color}" text-anchor="middle"#{rot}>#{esc(s)}</text>)
+            bw = bold ? ' font-weight="bold"' : ''
+            @out << %(<text x="#{n(cx)}" y="#{n(cy + size * 0.36)}" font-size="#{n(size)}" fill="#{color}" text-anchor="middle"#{bw}#{rot}>#{esc(s)}</text>)
           else
-            @out << Pdf.text_command(s.to_s, pt([cx, cy]), size * K, angle, color)
+            @out << Pdf.text_command(s.to_s, pt([cx, cy]), size * K, angle, color, false, bold)
           end
         end
 
-        def text_left(s, x, cy, size, color)
-          text(s, x + text_w(s, size) / 2, cy, size, 0, color)
+        def text_left(s, x, cy, size, color, bold = false)
+          text(s, x + text_w(s, size) / 2, cy, size, 0, color, bold)
         end
 
         def fit(s, size, max_w)

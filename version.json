@@ -1,7 +1,7 @@
 {
-  "version": "2.14.0",
+  "version": "2.15.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "70dd5f09ec187c88ff106f6cf90f4daf67faa6274d98213a80462af4a7e91817",
-  "notes": "v2.14.0: DIM thủ công 2 điểm – Smart Snap, đo thông thủy, chỉnh sửa, lưu theo hình, không ảnh hưởng Auto DIM"
+  "sha256": "460e7b9d4af44fc833800fbdb07c2abec47172d18d657dd3bee8c7603280f872",
+  "notes": "v2.15.0: chỉnh sửa trực tiếp DIM tự động (từng đoạn) và chữ trên bản vẽ"
 }

@@ -72,9 +72,10 @@ class TestDoorDims < Minitest::Test
     v[:dim_mode] = :interior
     pw, ph = AL::Sheet.paper('A3')
     cv = AL::Canvas.new(:svg, pw, ph)
-    placed = []
-    # tỉ lệ nhỏ 1:50 khiến nhiều khoảng 18 mm rất hẹp
-    AL::DimensionEngine.horizontal(cv, AL::DimensionEngine.view_breaks(v, 0)[0], 50, 50, 50, 44.5, 1, placed)
+    # tỉ lệ nhỏ 1:50 khiến nhiều khoảng 18 mm rất hẹp (v2.15: từng đoạn DIM là 1 đối tượng, có hộp chữ riêng)
+    r = AL::DimensionEngine.draw(cv, v, 50, 50, 50, {})
+    placed = r['segs'].map { |g| g['geo'] && g['geo']['tbox'] }.compact
+    assert placed.length > 4
     placed.combination(2).each do |a, b|
       overlap = a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
       refute overlap, "chữ DIM đè nhau: #{a.inspect} #{b.inspect}"

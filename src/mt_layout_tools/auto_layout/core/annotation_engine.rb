@@ -30,8 +30,17 @@ module MTDesign
               'arrow' => ARROWS.include?(n['arrow'].to_s) ? n['arrow'].to_s : 'arrow',
               'layer' => (n['layer'].to_s.strip.empty? ? DEFAULT_LAYER : n['layer'].to_s.strip[0, 60]),
               'sheet' => n['sheet'].to_i.clamp(0, 49) # chú thích thuộc tờ nào của trang
-            }
+            }.merge(style(n))
           end
+        end
+
+        # v2.15: căn lề (text / nhiều dòng), chữ đậm, khóa vị trí – chỉ lưu khi khác mặc định.
+        def style(n)
+          out = {}
+          out['align'] = n['align'].to_s if %w[center right].include?(n['align'].to_s)
+          out['bold'] = true if n['bold'] == true
+          out['locked'] = true if n['locked'] == true
+          out
         end
 
         def draw(cv, notes, hidden_layers = [])
@@ -66,10 +75,16 @@ module MTDesign
             tx = right ? end_pt[0] + 0.8 : end_pt[0] - 0.8 - width
             ty = y - (rows.length - 1) * lh / 2.0
           else
-            tx = x
+            # căn lề: x là mép trái (mặc định) / tâm / mép phải của khối chữ
+            tx = x - { 'center' => width / 2, 'right' => width }.fetch(n['align'].to_s, 0)
             ty = y
           end
-          rows.each_with_index { |r, i| cv.text_left(r, tx, ty + i * lh, size, n['color']) }
+          bold = n['bold'] == true
+          rows.each_with_index do |r, i|
+            rw = cv.text_w(r, size)
+            rx = tx + { 'center' => (width - rw) / 2, 'right' => width - rw }.fetch(n['align'].to_s, 0)
+            cv.text_left(r, rx, ty + i * lh, size, n['color'], bold)
+          end
           # vùng bấm chọn (trong suốt) cho giao diện
           cv.rect(tx - 0.6, ty - size * 0.75, width + 1.2, lh * rows.length + 0.3, 'transparent', nil) if cv.fmt == :svg
         end
