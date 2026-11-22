@@ -1,7 +1,7 @@
 {
-  "version": "2.13.0",
+  "version": "2.14.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "1ba7d30f6aff659fb573a5fc2cf30330dba84e421ef110415959a589760e69b8",
-  "notes": "AUTO LAYOUT PRO v2.13.0: ký hiệu cánh mở trên mặt bằng và mặt cắt nhìn từ trên tự đồng bộ từ ký hiệu mặt đứng (quay quanh trục bản lề thật, không theo tên mặt cắt), cấu hình góc mở / mở vào-ra / kiểu nét"
+  "sha256": "70dd5f09ec187c88ff106f6cf90f4daf67faa6274d98213a80462af4a7e91817",
+  "notes": "v2.14.0: DIM thủ công 2 điểm – Smart Snap, đo thông thủy, chỉnh sửa, lưu theo hình, không ảnh hưởng Auto DIM"
 }

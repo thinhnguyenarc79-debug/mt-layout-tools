@@ -22,6 +22,7 @@ module MTDesign
                       'date' => Time.now.strftime('%d.%m.%Y') },
             'exclude_tags' => [], 'door_tag' => '',
             'defaults' => default_page_settings,
+            'mdim' => ManualDim.clean_cfg(nil),
             'pages' => []
           }
         end
@@ -53,6 +54,7 @@ module MTDesign
           p['exclude_tags'] = Array(raw['exclude_tags']).map { |t| str(t) }.uniq.first(500)
           p['door_tag'] = str(raw['door_tag'])
           p['defaults'] = clean_settings(raw['defaults'] || {})
+          p['mdim'] = ManualDim.clean_cfg(raw['mdim']) # thiết lập công cụ DIM thủ công
           seen = {}
           p['pages'] = Array(raw['pages']).first(1000).map { |pg| clean_page(pg) }.reject do |pg|
             dup = pg['pid'].positive? && seen[pg['pid']]
@@ -112,6 +114,8 @@ module MTDesign
             'swing' => DoorSwing.clean(pg['swing']),
             # bản sao hình chiếu: [{ 'n', 'src' (key hình gốc) }] -> hình 'cp:n' (độc lập vị trí/tỉ lệ/tờ)
             'copies' => clean_copies(pg['copies']),
+            # DIM thủ công 2 điểm: { view_key => [dim] } – tách riêng Auto DIM, không bao giờ bị ghi đè khi dựng lại
+            'manual_dims' => ManualDim.clean(pg['manual_dims']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
               next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2}|cp:\d{1,3})\z/) && v.is_a?(Array) && v.length == 2
 
@@ -145,6 +149,7 @@ module MTDesign
               end
               # và phân loại bộ phận gán tay (roles) – không ghi đè dữ liệu người dùng khi triển khai lại
               base = base.merge('view_props' => keep, 'door_symbols' => old['door_symbols'] || {}, 'roles' => old['roles'] || {},
+                                'manual_dims' => old['manual_dims'] || {},
                                 'offsets' => (old['offsets'] || {}).select { |k, _| keep[k] && keep[k]['position_locked'] })
               fresh = clean_page(base.merge('id' => old['id'], 'sheet_no' => old['sheet_no']))
               project['pages'][project['pages'].index(old)] = fresh

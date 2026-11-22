@@ -177,3 +177,16 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 #paper g.edhandles rect.dh { cursor: nwse-resize; }
 
 #symList .it select.opn { width: 78px; }
+
+/* DIM thủ công (v2.14) */
+#paper g.mdim { cursor: pointer; }
+#paper g.mdim.sel path { stroke: #E8590C; }
+#paper g.mdim.sel text { fill: #E8590C; }
+#paper g.mdim .mdhit { pointer-events: all; }
+#paper circle.mdh { cursor: grab; }
+.mdrow { display: flex; align-items: center; gap: 6px; }
+.mdrow .nm { font-weight: 600; min-width: 58px; }
+.mdrow .auto { flex: 1; color: #6B6B6B; font-size: 11px; }
+.mdrow.on { background: #FFF1E6; }
+.mdrow.bad .nm, .mdrow.bad b { color: #C0392B; }
+.mdrow button { padding: 0 5px; min-width: 0; }

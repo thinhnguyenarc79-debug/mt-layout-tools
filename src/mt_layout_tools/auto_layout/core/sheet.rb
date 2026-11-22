@@ -226,8 +226,24 @@ module MTDesign
         def draw_placement(cv, ctx, pl, page)
           v, x, base = pl
           cv.group('class' => 'view', 'data-key' => v[:key]) do
-            ctx[:info]['frames'][v[:key]] = draw_view(cv, v, ctx[:scale], x, base, page)
+            fr = ctx[:info]['frames'][v[:key]] = draw_view(cv, v, ctx[:scale], x, base, page)
+            draw_manual_dims(cv, v, fr, page, ctx[:info])
           end
+        end
+
+        # DIM thủ công 2 điểm: vẽ sau Auto DIM, độc lập với nó (tắt Auto DIM vẫn hiện; chạy lại Auto DIM không xoá).
+        # Gửi kèm giao diện: hình học bắt điểm của hình + DIM đã bám lại theo model hiện tại.
+        def draw_manual_dims(cv, v, fr, page, info)
+          key = v[:key].to_s
+          (info['snap'] ||= {})[key] = ManualDim.snap_payload(v) unless key == 'iso'
+          list = (page['manual_dims'] || {})[key]
+          return if list.nil? || list.empty?
+
+          ox, oy, s = fr
+          res = ManualDim.draw(cv, v, s, ox, oy, list, page.fetch('round', 1))
+          (info['manual_dims'] ||= {})[key] = res
+          bad = res.count { |d| d['status'] == 'broken' }
+          add_note(info, "DIM MẤT LIÊN KẾT: #{bad} DIM thủ công trên #{v[:name]} không còn bám vào cạnh gốc – kéo lại điểm bám hoặc xoá.") if bad.positive?
         end
 
         # Ghép các mảnh hình + bảng vật liệu + chú thích + khung + khung tên.

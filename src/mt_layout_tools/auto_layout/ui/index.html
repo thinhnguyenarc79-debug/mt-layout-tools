@@ -19,6 +19,7 @@
       <button data-tool="leader" class="tool" title="Leader: bấm điểm mũi tên, rồi bấm vị trí chữ (L)">↖ Leader</button>
       <button data-tool="material" class="tool" title="Ghi chú vật liệu: bấm điểm mũi tên, rồi vị trí chữ; chọn vật liệu có trong model">▣ Vật liệu</button>
       <button data-tool="detail" class="tool" title="Chi tiết phóng to: kéo khung trên một hình chiếu/mặt cắt (D)">⊡ Chi tiết</button>
+      <button data-tool="mdim" class="tool" title="THÊM DIM THỦ CÔNG 2 điểm (M): bấm điểm đầu, điểm cuối, rồi bấm vị trí đặt đường DIM. ESC để hủy">⟷ DIM</button>
     </span>
     <span class="grp">
       <button id="zout" title="Thu nhỏ">−</button><button id="zfit" title="Vừa khung (F)">⤢</button><button id="zin" title="Phóng to">+</button>
@@ -174,6 +175,20 @@
       <div id="partGroups"></div>
       <p class="hint">Chỉ hiện bộ phận của model đang mở. Nhóm theo loại – bấm tiêu đề để mở/thu. Tick nhiều dòng (hoặc ☐ ở tiêu đề để tick cả nhóm) rồi "Gán mục đã tick". "Xác nhận" = chốt các mục tự nhận của nhóm thành gán tay. Bấm tên để chọn bộ phận trong SketchUp (không đổi model). ↶ để hoàn tác. Lưu riêng cho từng model theo đường dẫn instance khi bấm 💾 Lưu.</p>
     </div>
+    <h3>DIM thủ công</h3>
+    <div class="body" id="mdBox">
+      <div class="btns"><button id="mdAdd" class="gold" title="Bấm 2 điểm trên hình học thực, rồi bấm vị trí đặt đường DIM (M)">⟷ THÊM DIM THỦ CÔNG</button><button id="mdGapBtn" title="Bấm 1 lần vào khoảng trống giữa hai tấm (vd. giữa hai đợt kệ)">Đo thông thủy 1 nhấp</button></div>
+      <div class="row">
+        <div><label>Loại đo</label><select id="mdKind"><option value="clear">Khoảng thông thủy</option><option value="free">Tự do (đúng điểm bắt)</option></select></div>
+        <div><label>Phương đo</label><select id="mdAxis"><option value="auto">Tự động dọc/ngang</option><option value="v">Dọc</option><option value="h">Ngang</option><option value="a">Thẳng (chéo)</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>Vị trí DIM</label><select id="mdSide"><option value="l">Bên trái hình</option><option value="r">Bên phải hình</option><option value="free">Tự chọn theo chuột</option></select></div>
+        <div style="flex:none;align-self:flex-end"><label class="checks"><input id="mdSnap" type="checkbox" checked> Smart Snap</label></div>
+      </div>
+      <div id="mdList" class="list"></div>
+      <p class="hint">Bắt điểm chỉ vào hình học thực (cạnh ván, nét cắt) – bỏ qua DIM, hatch, leader, ký hiệu cánh, đường cắt. Thông thủy: điểm tự đưa về mặt tấm hướng vào khoảng hở. Bấm DIM để chọn; kéo đường DIM để dời; kéo chấm 2 đầu để đổi điểm bám; Delete để xóa. DIM thủ công lưu theo hình, không bị Auto DIM ghi đè.</p>
+    </div>
     <h3>Ký hiệu cánh</h3>
     <div class="body" id="symBox">
       <div id="symList" class="list"></div>
@@ -225,6 +240,7 @@
 </div>
 <div id="ctxMenu" class="ctx" hidden></div>
 <div id="dlg" class="dlgwrap" hidden><div class="dlg"><h4 id="dlgTitle"></h4><div id="dlgBody"></div><div class="btns" id="dlgBtns"></div></div></div>
+<script src="mdim.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
