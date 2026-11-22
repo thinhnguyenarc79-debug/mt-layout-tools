@@ -147,14 +147,15 @@ module MTDesign
               !pick_scale(group, aw, ah).nil?
             end
           end
-          pinned = views.select { |v| v[:pin] }
-          if pinned.all? { |v| v[:pin][:sheet].to_i.zero? } && fits.call(views)
+          pinned = views.select { |v| v[:pin] || v[:want_sheet] }
+          tsheet = ->(v) { v[:pin] ? v[:pin][:sheet].to_i : v[:want_sheet].to_i }
+          if pinned.all? { |v| tsheet.call(v).zero? } && fits.call(views)
             return [[views, want.positive? ? want : nil, nil]]
           end
 
           # Hình đặt tay (vị trí thủ công) ở lại đúng tờ đã đặt; các hình còn lại first-fit vào tờ đầu tiên còn chỗ.
           sheets = []
-          pinned.each { |v| (sheets[v[:pin][:sheet].to_i.clamp(0, 49)] ||= []) << v }
+          pinned.each { |v| (sheets[tsheet.call(v).clamp(0, 49)] ||= []) << v }
           sheets = sheets.map { |g| g || [] }
           (views - pinned).each do |v|
             target = sheets.find { |g| fits.call(g + [v]) }
@@ -185,7 +186,8 @@ module MTDesign
           legend = mats.first(14)
           legend_h = legend.empty? ? 0 : legend.length * 4.2 + 2
           ah = area[3] - area[1] - legend_h
-          info = { 'note' => nil, 'boxes' => {}, 'offsets' => {}, 'frames' => {} }
+          info = { 'note' => nil, 'boxes' => {}, 'offsets' => {}, 'frames' => {}, 'area' => area.map { |n| n.round(2) },
+                   'legend_h' => (mats.first(14).empty? ? 0 : mats.first(14).length * 4.2 + 2) }
           ctx = { frame: frame, tb_x: tb_x, area: area, legend: legend, info: info, placements: [], empty: views.empty? }
           if views.empty?
             info['scale'] = page['scale'].to_i.positive? ? page['scale'].to_i : 20
@@ -209,7 +211,7 @@ module MTDesign
           info['scale_label'] = scale_label(views, scale)
           info['view_scales'] = views.map { |v| [v[:key], sc(v, scale)] }.to_h
           ctx[:scale] = scale
-          ctx[:placements] = place_views(views, scale, area, ah, page, info)
+          ctx[:placements] = place_views(views, scale, area, ah, page.merge('__legend_h' => legend_h), info)
           ctx
         end
 
@@ -298,14 +300,69 @@ module MTDesign
             info['boxes'][v[:key]] = [bx + dx, by + dy, bw, bh].map { |n| n.round(2) }
             [v, x + dx, base + dy]
           end
+          place_pending(placed, s, area, page, info)
           report_overlaps(placed, info)
           placed
+        end
+
+        # Hình CHỜ ĐẶT (đã định tờ, chưa có toạ độ) trên tờ đã có hình chốt chỗ: tìm chỗ trống trong vùng vẽ,
+        # né mọi khung hình (đã gồm DIM), bảng vật liệu và chú thích/leader của tờ. Không đủ chỗ -> báo, không đổi tờ.
+        def place_pending(placed, s, area, page, info)
+          return unless placed.any? { |v, _, _| v[:pin] } && placed.any? { |v, _, _| v[:want_sheet] }
+
+          occ = placed.reject { |v, _, _| v[:want_sheet] }.map { |v, _, _| info['boxes'][v[:key]] }.compact
+          leg = page['__legend_h'].to_f
+          occ << [area[2] - 64, area[3] - leg, 64, leg] if leg.positive?
+          Array(page['notes']).each do |n|
+            [[n['x'], n['y']], [n['tx'], n['ty']]].each do |x, y|
+              next unless x.is_a?(Numeric) && (x.nonzero? || y.to_f.nonzero?)
+
+              occ << [x - 3, y - 6, 45, 10]
+            end
+          end
+          placed.map!.with_index do |(v, x, base), _i|
+            next [v, x, base] unless v[:want_sheet]
+
+            bw = box_w(v, s)
+            bh = box_h(v, s)
+            spot = free_spot(occ, bw, bh, area)
+            if spot
+              info['boxes'][v[:key]] = [spot[0], spot[1], bw, bh].map { |n| n.round(2) }
+              occ << info['boxes'][v[:key]]
+              [v, spot[0], spot[1] + bh - M_BOTTOM]
+            else
+              (info['no_room'] ||= []) << v[:key]
+              add_note(info, "KHÔNG ĐỦ CHỖ: #{v[:name]} không vừa chỗ trống của tờ này – đang đặt tạm, có thể chồng hình. " \
+                             'Chọn: Dàn lại trang này / Chuyển sang trang khác / Hủy (↶).')
+              b = info['boxes'][v[:key]]
+              [v, b[0], b[1] + bh - M_BOTTOM]
+            end
+          end
+        end
+
+        # Quét lưới 2 mm từ trên xuống, trái sang phải: chỗ đầu tiên không giao khung nào (chừa 3 mm).
+        def free_spot(occ, bw, bh, area)
+          pad = 3.0
+          return nil if bw > area[2] - area[0] || bh > area[3] - area[1]
+
+          y = area[1]
+          while y + bh <= area[3] + 0.01
+            x = area[0]
+            while x + bw <= area[2] + 0.01
+              hit = occ.find { |b| x < b[0] + b[2] + pad && b[0] < x + bw + pad && y < b[1] + b[3] + pad && b[1] < y + bh + pad }
+              return [x.round(2), y.round(2)] unless hit
+
+              x = hit[0] + hit[2] + pad # nhảy qua khung đang chắn
+            end
+            y += 2.0
+          end
+          nil
         end
 
         # Bố cục đã dựng của 1 trang (mọi tờ): { key => [x_mm, y_mm, tờ] } – để CHỐT vị trí, lần sau không tính lại.
         def layout_of(outs)
           outs.each_with_index.each_with_object({}) do |((_svg, inf), i), h|
-            (inf['boxes'] || {}).each { |k, b| h[k] = [b[0].to_f.round(2), b[1].to_f.round(2), i] }
+            (inf['boxes'] || {}).each { |k, b| h[k] = [b[0].to_f.round(2), b[1].to_f.round(2), i, b[2].to_f.round(1), b[3].to_f.round(1)] }
           end
         end
 
@@ -342,6 +399,7 @@ module MTDesign
             end
             polylines(v, tf).each { |pl| cv.polyline(pl, 0.25, INK) }
             draw_cut(cv, v, tf)
+            cv.polyline(v[:border].map(&tf), 0.18, CUT_RED, [1.5, 0.8]) if v[:border] # viền chi tiết tròn/elip
             DoorSymbols.draw(cv, v, tf, page['door_symbols'])
             @obstacles = []
             section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
@@ -391,14 +449,44 @@ module MTDesign
             x0, y0, x1, y1 = d['rect']
             a = tf.call([x0, y0])
             b = tf.call([x1, y1])
+            mk = d['marker'] || {}
+            dash = [1.5, 0.8]
             cv.group('class' => 'detmark', 'data-det' => d['n']) do
-              cv.line([a[0], a[1]], [b[0], a[1]], 0.25, CUT_RED, [1.5, 0.8])
-              cv.line([b[0], a[1]], [b[0], b[1]], 0.25, CUT_RED, [1.5, 0.8])
-              cv.line([b[0], b[1]], [a[0], b[1]], 0.25, CUT_RED, [1.5, 0.8])
-              cv.line([a[0], b[1]], [a[0], a[1]], 0.25, CUT_RED, [1.5, 0.8])
-              c = [b[0] + 2.2, a[1] - 2.2]
-              cv.circle(c, 2.0, '#FFFFFF', CUT_RED, 0.3)
-              cv.text(d['n'].to_s, c[0], c[1], 2.4, 0, CUT_RED)
+              cx = (a[0] + b[0]) / 2.0
+              cy = (a[1] + b[1]) / 2.0
+              rx = (b[0] - a[0]).abs / 2.0
+              ry = (b[1] - a[1]).abs / 2.0
+              case mk['shape']
+              when 'circle', 'ellipse'
+                if mk['shape'] == 'circle'
+                  rx = ry = [rx, ry].max
+                end
+                pts = (0..72).map { |i| t = 2 * Math::PI * i / 72; [cx + rx * Math.cos(t), cy + ry * Math.sin(t)] }
+                cv.polyline(pts, 0.25, CUT_RED, dash)
+                edge = [cx + rx * Math.cos(-Math::PI / 4), cy + ry * Math.sin(-Math::PI / 4)]
+              else
+                cv.polyline([[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]], [a[0], a[1]]], 0.25, CUT_RED, dash)
+                edge = [b[0], a[1]]
+              end
+              c = mk['arrow'] ? [edge[0] + 6.5, edge[1] - 6.5] : [edge[0] + 2.2, edge[1] - 2.2]
+              if mk['arrow']
+                # mũi tên từ ký hiệu tham chiếu chỉ vào vùng trích
+                dx = edge[0] - c[0]
+                dy = edge[1] - c[1]
+                l = Math.hypot(dx, dy)
+                ux = dx / l
+                uy = dy / l
+                s0 = [c[0] + ux * 2.0, c[1] + uy * 2.0]
+                cv.line(s0, edge, 0.2, CUT_RED)
+                cv.line(edge, [edge[0] - ux * 1.6 - uy * 0.6, edge[1] - uy * 1.6 + ux * 0.6], 0.2, CUT_RED)
+                cv.line(edge, [edge[0] - ux * 1.6 + uy * 0.6, edge[1] - uy * 1.6 - ux * 0.6], 0.2, CUT_RED)
+              end
+              if mk['bubble'] == false
+                cv.text_left(DetailEngine.label(d), c[0] - 1, c[1], 2.2, CUT_RED)
+              else
+                cv.circle(c, 2.0, '#FFFFFF', CUT_RED, 0.3)
+                cv.text(d['n'].to_s, c[0], c[1], 2.4, 0, CUT_RED)
+              end
             end
           end
         end

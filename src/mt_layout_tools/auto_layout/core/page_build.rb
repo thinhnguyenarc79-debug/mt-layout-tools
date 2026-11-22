@@ -313,7 +313,26 @@ module MTDesign
               @notes << e.message
             end
           end
+          copies
           job.insert_next(chain_tasks + [finish_task])
+        end
+
+        # ---------- bản sao hình chiếu (cùng hình học, vị trí / tỉ lệ / tờ riêng) ----------
+        def copies
+          Array(@pg['copies']).each do |c|
+            src = @views.find { |vv| vv[:key] == c['src'] }
+            unless src
+              @notes << "Bản sao của #{c['src']}: hình gốc không còn trên trang."
+              next
+            end
+            cp = src.dup
+            cp.delete(:own_scale)
+            cp.delete(:chains)
+            cp[:key] = "cp:#{c['n']}"
+            cp[:copy_of] = c['src']
+            cp[:fixed_scale] = src[:detail] ? src[:fixed_scale] : nil
+            @views << cp
+          end
         end
 
         # ---------- 8a. nối nét theo lô ----------
@@ -368,13 +387,17 @@ module MTDesign
             v[:position_locked] = vp ? vp['position_locked'] == true : false
             # có toạ độ đã chốt (tự động hoặc chỉnh tay) -> đặt đúng chỗ đó, không tính lại bố cục
             v[:pin] = vp && vp['x_mm'] && vp['y_mm'] ? { x: vp['x_mm'], y: vp['y_mm'], sheet: vp['sheet'].to_i, manual: vp['placement_mode'] == 'manual' } : nil
+            # chưa có toạ độ nhưng đã định tờ -> đặt vào chỗ trống của ĐÚNG tờ đó (không tự đưa về A-01)
+            v[:want_sheet] = !v[:pin] && vp && vp['sheet'] ? vp['sheet'].to_i : nil
           end
         end
 
         def sheet_tasks(idx, total, group, forced, note)
           st = { frags: [] }
           prep = Job.once("xếp chỗ tờ #{idx + 1}") do |job|
-            st[:ctx] = Sheet.prepare(group, @mats, @pg, @pw, @ph, forced)
+            # chú thích/leader của tờ này: để hình chờ đặt né ra
+            st[:ctx] = Sheet.prepare(group, @mats, @pg.merge('notes' => Array(@pg['notes']).select { |n| n['sheet'].to_i == idx }),
+                                     @pw, @ph, forced)
             draws = st[:ctx][:placements].map do |pl|
               Job.once("vẽ #{pl[0][:name]}") do |j|
                 j.progress("#{label}: vẽ #{pl[0][:name].downcase}, ghi kích thước (tờ #{idx + 1}/#{total})", 99)

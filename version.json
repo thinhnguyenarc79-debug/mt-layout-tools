@@ -1,7 +1,7 @@
 {
-  "version": "2.9.0",
+  "version": "2.10.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "a287ce3e04a3c039a4fe71282dbefd3e0aaabd0967d0c32445de296fcac3c922",
-  "notes": "AUTO LAYOUT PRO v2.9.0: Lưu dự án (kiểm tra ghi thành công) / Xuất bản sao JSON / Mở dự án; tự lưu bản nháp an toàn + khôi phục sau khi tắt đột ngột; THÊM MODEL không đụng trang cũ (giao dịch, tờ mới ở cuối, model trùng hỏi Cập nhật/Bỏ qua); bố cục mọi hình được chốt – chỉ Dàn trang lại (chọn phạm vi, cảnh báo, hoàn tác) mới đổi"
+  "sha256": "377df474f3ed13280cb39acd2c6ec07357f97d16bc9d026f5a471742f2b2c644",
+  "notes": "AUTO LAYOUT PRO v2.10.0: menu chuột phải cho hình chiếu và giấy trống (thêm hình vào trang – CHUYỂN hoặc TẠO BẢN SAO, dán, chuyển trang, lấp khoảng trống); chi tiết nằm ngay tờ trích, không còn nhảy về A-01; kiểu marker chi tiết chữ nhật/tròn/elip nét đứt, mũi tên, bóng số; đổi tên/tỷ lệ/vùng trích chi tiết"
 }

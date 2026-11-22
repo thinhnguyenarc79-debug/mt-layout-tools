@@ -108,8 +108,10 @@ module MTDesign
             'view_props' => clean_view_props(pg['view_props']),
             # ký hiệu hướng mở cánh (người dùng chọn): { "pid/pid" => {type, hinge, slide, open, style, visible} }
             'door_symbols' => DoorSymbols.clean(pg['door_symbols']),
+            # bản sao hình chiếu: [{ 'n', 'src' (key hình gốc) }] -> hình 'cp:n' (độc lập vị trí/tỉ lệ/tờ)
+            'copies' => clean_copies(pg['copies']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|
-              next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2})\z/) && v.is_a?(Array) && v.length == 2
+              next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2}|cp:\d{1,3})\z/) && v.is_a?(Array) && v.length == 2
 
               h[k.to_s] = v.map { |n| n.to_f.clamp(-2000, 2000) }
             end
@@ -214,7 +216,7 @@ module MTDesign
           return {} unless raw.is_a?(Hash)
 
           raw.first(60).each_with_object({}) do |(k, v), h|
-            next unless v.is_a?(Hash) && k.to_s =~ /\A([a-z]+|sec:[A-Z]|det:\d{1,2})\z/
+            next unless v.is_a?(Hash) && k.to_s =~ /\A([a-z]+|sec:[A-Z]|det:\d{1,2}|cp:\d{1,3})\z/
 
             sides = v.select { |side, _| %w[top left right].include?(side.to_s) }
                      .transform_values { |n| n.to_f.clamp(-60, 60).round(2) }
@@ -222,7 +224,7 @@ module MTDesign
           end
         end
 
-        VIEW_PROP_KEY = /\A([a-z]+|sec:[A-Z]|det:\d{1,2})\z/.freeze
+        VIEW_PROP_KEY = /\A([a-z]+|sec:[A-Z]|det:\d{1,2}|cp:\d{1,3})\z/.freeze
 
         # Hình khóa tỉ lệ luôn có scale_override (khóa = giữ đúng tỉ lệ đang dùng). Không bao giờ tự mở khóa.
         def clean_view_props(raw)
@@ -240,13 +242,29 @@ module MTDesign
             # placement_mode: 'auto' = plugin đặt, 'manual' = người dùng đã chỉnh (vẫn kéo tiếp được).
             has = v['x_mm'].is_a?(Numeric) && v['y_mm'].is_a?(Numeric)
             manual = v['placement_mode'] == 'manual' && has
-            next if sc.nil? && !pos && !has
+            # chỉ có tờ, chưa có toạ độ: hình CHỜ ĐẶT trên tờ đó (vd. chi tiết mới trích, hình vừa chuyển tờ)
+            pend = !has && v['sheet'].is_a?(Numeric)
+            next if sc.nil? && !pos && !has && !pend
 
             h[k.to_s] = { 'scale_override' => sc, 'scale_locked' => locked, 'position_locked' => pos,
                           'placement_mode' => manual ? 'manual' : 'auto',
                           'x_mm' => has ? v['x_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
                           'y_mm' => has ? v['y_mm'].to_f.clamp(-500.0, 2000.0).round(2) : nil,
-                          'sheet' => has ? v['sheet'].to_i.clamp(0, 49) : nil }
+                          'sheet' => has || pend ? v['sheet'].to_i.clamp(0, 49) : nil }
+          end
+        end
+
+        def clean_copies(raw)
+          used = {}
+          Array(raw).first(60).filter_map do |c|
+            next unless c.is_a?(Hash)
+
+            n = c['n'].to_i
+            src = c['src'].to_s
+            next if n <= 0 || used[n] || src !~ /\A([a-z]+|sec:[A-Z]|det:\d{1,2})\z/
+
+            used[n] = true
+            { 'n' => n, 'src' => src }
           end
         end
 

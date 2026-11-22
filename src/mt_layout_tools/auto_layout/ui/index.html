@@ -195,7 +195,13 @@
     <div class="body" id="noteBox"><p class="hint">Chọn công cụ Text / Leader / Vật liệu trên thanh trên rồi bấm lên giấy. Bấm vào chú thích để sửa; kéo để dời; phím Delete để xoá.</p></div>
     <div class="body" id="layerBox"></div>
     <h3>Chi tiết phóng to</h3>
-    <div class="body" id="detBox"></div>
+    <div class="body">
+      <div class="row">
+        <div><label>Kiểu marker mặc định</label><select id="detShape"><option value="rect">Chữ nhật nét đứt</option><option value="circle">Tròn nét đứt</option><option value="ellipse">Elip nét đứt</option></select></div>
+      </div>
+      <div class="checks"><label><input id="detArrow" type="checkbox"> Có mũi tên</label><label><input id="detBubble" type="checkbox" checked> Bóng số tham chiếu</label></div>
+      <div id="detBox"></div>
+    </div>
     <h3>Hình chiếu đang chọn</h3>
     <div id="propView" class="body"><p class="hint">Bấm vào một hình chiếu trên giấy để chọn; kéo để di chuyển.</p></div>
   </aside>

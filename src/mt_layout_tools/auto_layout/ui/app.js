@@ -225,7 +225,8 @@
   function viewName(k) {
     if (S.viewNames[k]) return cap(S.viewNames[k]);
     if (/^sec:/.test(k)) return 'Mặt cắt ' + k.slice(4) + '-' + k.slice(4);
-    if (/^det:/.test(k)) return 'Chi tiết ' + k.slice(4);
+    if (/^det:/.test(k)) { var dd = (page() && (page().details || []).filter(function (x) { return 'det:' + x.n === k; })[0]); return dd && dd.label ? dd.label : 'Chi tiết ' + k.slice(4); }
+    if (/^cp:/.test(k)) { var cc = (page() && (page().copies || []).filter(function (x) { return 'cp:' + x.n === k; })[0]); return 'Bản sao ' + (cc ? viewName(cc.src) : k); }
     return k;
   }
   function vprops(k, create) {
@@ -525,6 +526,24 @@
     it(lk ? 'unlock' : 'lock', lk ? 'Mở khóa tỷ lệ' : 'Khóa tỷ lệ (1:' + eff + ')');
     it(v.position_locked ? 'unpos' : 'pos', v.position_locked ? 'Mở khóa vị trí' : 'Khóa vị trí');
     h.push('<div class="sep"></div>');
+    var isDet = /^det:/.test(k), dn = isDet ? +k.slice(4) : 0;
+    if (isDet) {
+      var det = (page().details || []).filter(function (x) { return x.n === dn; })[0] || {}, mkr = det.marker || {};
+      h.push('<div class="lb">Chi tiết – tỷ lệ</div><div class="grid">' + [1, 2, 4, 5, 10, 15, 20].map(function (n) {
+        return '<span data-act="dsc:' + n + '" class="' + (det.scale === n ? 'on' : '') + '">1:' + n + '</span>'; }).join('') + '</div>');
+      h.push('<div class="lb">Kiểu marker</div>');
+      [['rect', 'Chữ nhật nét đứt'], ['circle', 'Tròn nét đứt'], ['ellipse', 'Elip nét đứt']].forEach(function (x) { it('dmk:' + x[0], x[1], { on: (mkr.shape || 'rect') === x[0] }); });
+      it('darrow', 'Có mũi tên', { on: !!mkr.arrow }); it('dbubble', 'Có bóng số tham chiếu', { on: mkr.bubble !== false });
+      h.push('<div class="sep"></div>');
+      it('drename', 'Đổi tên chi tiết…'); it('dreselect', 'Chọn lại vùng trích chi tiết');
+    }
+    h.push('<div class="lb">' + (isDet ? 'Chuyển chi tiết sang trang' : 'Chuyển sang trang khác') + '</div>' + sheetGrid('mv:', S.sheet || 0));
+    h.push('<div class="lb">' + (isDet ? 'Tạo bản sao chi tiết sang trang' : 'Tạo bản sao sang trang khác') + '</div>' + sheetGrid('cp:', null));
+    it('copyhere', 'Tạo bản sao tại trang này');
+    it('clip', 'Sao chép (để dán ở trang khác)');
+    if (!isDet) { it('refreshv', 'Cập nhật hình chiếu'); it('mkdet', 'Tạo chi tiết phóng to từ hình này'); }
+    it('delv', isDet ? 'Xóa chi tiết' : 'Xóa hình chiếu');
+    h.push('<div class="sep"></div>');
     it('relayout', 'Dàn trang lại…');
     m.innerHTML = h.join(''); m.hidden = false;
     var w = m.offsetWidth, hh = m.offsetHeight;
@@ -542,12 +561,221 @@
       else if (act === 'pos') lockPos(k, true);
       else if (act === 'unpos') lockPos(k, false);
       else if (act === 'relayout') relayoutDialog();
+      else if (act.indexOf('mv:') === 0) moveView(k, +act.slice(3));
+      else if (act.indexOf('cp:') === 0) copyView(k, +act.slice(3), null);
+      else if (act === 'copyhere') copyView(k, S.sheet || 0, null);
+      else if (act === 'clip') { S.clip = k; msg('Đã sao chép ' + viewName(k) + ' – chuột phải vào chỗ trống ở tờ cần dán → "Dán hình chiếu đã copy".', 'ok'); }
+      else if (act === 'refreshv') $('refresh').click();
+      else if (act === 'mkdet') { setTool('detail'); msg('Kéo khung quanh vị trí cần phóng to trên ' + viewName(k) + '.', ''); }
+      else if (act === 'delv') deleteView(k);
+      else if (act.indexOf('dsc:') === 0) editDetail(dn, function (d) { d.scale = +act.slice(4); });
+      else if (act.indexOf('dmk:') === 0) editDetail(dn, function (d) { d.marker = Object.assign({}, d.marker || {}, { shape: act.slice(4) }); });
+      else if (act === 'darrow') editDetail(dn, function (d) { d.marker = Object.assign({}, d.marker || {}); d.marker.arrow = !d.marker.arrow; });
+      else if (act === 'dbubble') editDetail(dn, function (d) { d.marker = Object.assign({}, d.marker || {}); d.marker.bubble = d.marker.bubble === false; });
+      else if (act === 'drename') {
+        var cd = (page().details || []).filter(function (x) { return x.n === dn; })[0];
+        var nm = window.prompt('Tên chi tiết (marker nguồn đổi theo):', cd && cd.label ? cd.label : 'CHI TIẾT ' + dn);
+        if (nm !== null) editDetail(dn, function (d) { d.label = nm.trim() || null; });
+      } else if (act === 'dreselect') { S.reDetail = dn; setTool('detail'); msg('Kéo khung vùng trích mới cho ' + viewName(k) + ' trên hình nguồn.', ''); }
     };
+  }
+
+  // ---------------- trang / bản sao / chi tiết (v2.10) ----------------
+  function sheetCount() { var p = page(); return Math.max(1, (S.info && S.info.sheets) || (p && p.sheet_count) || 1); }
+  function sheetCode(j) {
+    var rows = sheetRows(), p = page();
+    for (var i = 0; i < rows.length; i++) if (rows[i].page === p && rows[i].j === j) return rows[i].code;
+    return 'tờ mới';
+  }
+  function sheetGrid(prefix, skip) {
+    var n = sheetCount(), h = '<div class="grid">';
+    for (var j = 0; j <= n; j++) {
+      if (j === skip) continue;
+      h += '<span data-act="' + prefix + j + '">' + (j === n ? '+ Tờ mới' : esc(sheetCode(j))) + '</span>';
+    }
+    return h + '</div>';
+  }
+  function sheetOf(k) {
+    var v = vprops(k); if (v && v.sheet != null) return v.sheet;
+    var L = S.info && S.info.layout && S.info.layout[k]; return L ? L[2] : null;
+  }
+  // CHUYỂN: bản gốc rời tờ cũ, sang tờ đích (đặt vào chỗ trống, hoặc đúng điểm bấm nếu có). Không tạo trùng.
+  function moveView(k, j, at) {
+    if (posLocked(k)) { msg(viewName(k) + ' đang khóa vị trí – mở khóa trước khi chuyển trang.', 'err'); return; }
+    var from = sheetOf(k);
+    snapshot();
+    var v = vprops(k, true);
+    if (at) { v.placement_mode = 'manual'; v.x_mm = at[0]; v.y_mm = at[1]; } else { v.placement_mode = 'auto'; v.x_mm = v.y_mm = null; }
+    v.sheet = j;
+    if (page().offsets) delete page().offsets[k];
+    if (/^det:/.test(k)) editDetail(+k.slice(4), function (d) { d.sheet = j; }, true);
+    S.pendingPlace = at ? null : k;
+    changed();
+    if (j !== (S.sheet || 0)) { S.sheet = j; renderPages(); }
+    requestRender(true);
+    msg('Đã CHUYỂN ' + viewName(k) + (from != null ? ' từ ' + sheetCode(from) : '') + ' sang ' + sheetCode(j) + ' – tờ cũ KHÔNG còn hình này. ↶ để hoàn tác.', 'ok');
+  }
+  // BẢN SAO: bản gốc giữ nguyên ở tờ cũ; thêm bản sao độc lập ở tờ đích.
+  function copyView(k, j, at) {
+    var p = page(); snapshot();
+    var nk;
+    if (/^det:/.test(k)) {
+      var d0 = (p.details || []).filter(function (x) { return 'det:' + x.n === k; })[0]; if (!d0) return;
+      var n = p.details.reduce(function (m, d) { return Math.max(m, d.n); }, 0) + 1;
+      var d1 = JSON.parse(JSON.stringify(d0)); d1.n = n; d1.sheet = j; d1.label = d0.label ? d0.label + ' (bản sao)' : null;
+      p.details.push(d1); nk = 'det:' + n; renderDetails();
+    } else {
+      var src = /^cp:/.test(k) ? ((p.copies || []).filter(function (x) { return 'cp:' + x.n === k; })[0] || {}).src : k;
+      p.copies = p.copies || [];
+      var m2 = p.copies.reduce(function (m, c) { return Math.max(m, c.n); }, 0) + 1;
+      p.copies.push({ n: m2, src: src }); nk = 'cp:' + m2;
+    }
+    var v = vprops(nk, true);
+    if (at) { v.placement_mode = 'manual'; v.x_mm = at[0]; v.y_mm = at[1]; } else { v.placement_mode = 'auto'; v.x_mm = v.y_mm = null; }
+    v.sheet = j;
+    var sc0 = vprops(k); if (sc0 && sc0.scale_override) v.scale_override = sc0.scale_override;
+    S.pendingPlace = at ? null : nk;
+    changed();
+    if (j !== (S.sheet || 0)) { S.sheet = j; renderPages(); }
+    requestRender(true);
+    msg('Đã TẠO BẢN SAO ' + viewName(k) + ' ở ' + sheetCode(j) + ' – bản gốc VẪN Ở ' + sheetCode(sheetOf(k) || 0) + '. ↶ để hoàn tác.', 'ok');
+  }
+  function editDetail(n, fn, quiet) {
+    var p = page(), d = (p.details || []).filter(function (x) { return x.n === n; })[0]; if (!d) return;
+    if (!quiet) snapshot();
+    fn(d); renderDetails();
+    if (!quiet) { changed(); requestRender(true); }
+  }
+  function deleteView(k) {
+    var p = page(); if (!p) return;
+    if (!window.confirm('Xóa ' + viewName(k) + ' khỏi trang? (↶ để hoàn tác)')) return;
+    snapshot();
+    if (/^det:/.test(k)) p.details = (p.details || []).filter(function (x) { return 'det:' + x.n !== k; });
+    else if (/^cp:/.test(k)) p.copies = (p.copies || []).filter(function (x) { return 'cp:' + x.n !== k; });
+    else if (/^sec:/.test(k)) p.sections = (p.sections || []).filter(function (x) { return 'sec:' + x.label !== k; });
+    else p.views = (p.views || []).filter(function (x) { return x !== k; });
+    // bản sao / chi tiết lấy từ hình vừa xóa cũng bỏ (không để bản mồ côi)
+    p.copies = (p.copies || []).filter(function (x) { return x.src !== k; });
+    p.details = (p.details || []).filter(function (x) { return x.src !== k; });
+    if (p.view_props) delete p.view_props[k];
+    if (p.offsets) delete p.offsets[k];
+    S.sel = null; renderPageProps(); renderDetails(); renderSections && renderSections(); changed(); requestRender(true);
+    msg('Đã xóa ' + viewName(k) + '.', 'ok');
+  }
+  function noRoomDialog(k) {
+    dialog('Trang hiện tại không đủ chỗ', '<p>' + esc(viewName(k)) + ' không vừa chỗ trống của tờ ' + esc(sheetCode(S.sheet || 0)) + '. Bạn muốn:</p>',
+      [['Hủy (↶)', function () { $('undo').click(); }],
+       ['Chuyển sang trang khác', function () { moveView(k, sheetCount()); }],
+       ['Tự bố trí lại trang này', function () { snapshot(); relayoutPages([page()], S.sheet || 0, false); changed(); requestRender(true); }, 'gold']]);
+  }
+
+  // ---------------- menu chuột phải trên VÙNG GIẤY TRỐNG ----------------
+  function showPaperCtx(x, y, pt) {
+    var m = $('ctxMenu'), h = [];
+    var it = function (act, label, off) { h.push('<div class="it' + (off ? ' off' : '') + '" data-act="' + act + '">' + esc(label) + '</div>'); };
+    h.push('<div class="hd">Tờ ' + esc(sheetCode(S.sheet || 0)) + '<small>' + pt[0].toFixed(0) + ', ' + pt[1].toFixed(0) + ' mm</small></div>');
+    it('add', 'Thêm hình chiếu vào trang này…');
+    it('paste', S.clip ? 'Dán hình chiếu đã copy (' + viewName(S.clip) + ')' : 'Dán hình chiếu đã copy', !S.clip);
+    it('newdet', 'Tạo chi tiết mới');
+    it('relay', 'Tự động bố trí lại trang này');
+    it('fill', 'Tự động đề xuất lấp khoảng trống…');
+    m.innerHTML = h.join(''); m.hidden = false;
+    m.style.left = Math.max(4, Math.min(x, window.innerWidth - m.offsetWidth - 4)) + 'px';
+    m.style.top = Math.max(4, Math.min(y, window.innerHeight - m.offsetHeight - 4)) + 'px';
+    m.onclick = function (e) {
+      var a = e.target.closest('[data-act]'); if (!a || a.classList.contains('off')) return;
+      hideCtx();
+      var act = a.dataset.act;
+      if (act === 'add') addViewDialog(pt);
+      else if (act === 'paste') copyView(S.clip, S.sheet || 0, pt);
+      else if (act === 'newdet') { setTool('detail'); msg('Kéo khung quanh vị trí cần phóng to trên một hình chiếu của tờ này.', ''); }
+      else if (act === 'relay') {
+        var p = page(), man = Object.keys(p.view_props || {}).filter(function (k) { var v = p.view_props[k]; return (v.sheet || 0) === (S.sheet || 0) && v.placement_mode === 'manual' && !v.position_locked; }).length;
+        var withMan = man ? window.confirm(man + ' hình trên tờ này đã chỉnh tay. Dàn lại cả các hình đó? (OK = có, Cancel = chỉ hình tự động; hình khóa luôn giữ)') : false;
+        snapshot(); var n = relayoutPages([p], S.sheet || 0, withMan); changed(); requestRender(true);
+        msg('Đã bố trí lại ' + n + ' hình trên tờ này. ↶ để hoàn tác.', 'ok');
+      } else if (act === 'fill') fillDialog();
+    };
+  }
+  // Danh sách hình có thể thêm: hình của trang (mọi tờ), mặt cắt, chi tiết, bản sao + hình chưa bật
+  var ADD_KEYS = [['front', 'Mặt đứng'], ['open', 'Mặt đứng tháo cánh'], ['top', 'Mặt bằng'], ['left', 'Mặt bên trái'], ['right', 'Mặt bên phải'],
+                  ['back', 'Mặt sau'], ['iso', 'Trục đo']];
+  function addViewDialog(pt) {
+    var p = page(), here = S.sheet || 0, rows = [];
+    ADD_KEYS.forEach(function (x) { rows.push([x[0], x[1], (p.views || []).indexOf(x[0]) >= 0]); });
+    (p.sections || []).forEach(function (sc) { rows.push(['sec:' + sc.label, 'Mặt cắt ' + sc.label + '-' + sc.label, true]); });
+    (p.details || []).forEach(function (d) { rows.push(['det:' + d.n, viewName('det:' + d.n), true]); });
+    var def = 0;
+    for (var q = 0; q < rows.length; q++) { if (rows[q][2] && sheetOf(rows[q][0]) !== here) { def = q; break; } }
+    var body = '<p class="hint">Hình sẽ đặt tại điểm bạn bấm (' + pt[0].toFixed(0) + ', ' + pt[1].toFixed(0) + ' mm) trên tờ ' + esc(sheetCode(here)) + '.</p><div class="sub">' +
+      rows.map(function (r, i) {
+        var sh = r[2] ? sheetOf(r[0]) : null;
+        var st = !r[2] ? 'chưa có trên trang – sẽ thêm mới' : (sh === here ? 'đang ở tờ này' : 'đang ở tờ ' + sheetCode(sh == null ? 0 : sh));
+        return '<label class="opt"><input type="radio" name="av" value="' + i + '"' + (i === def ? ' checked' : '') + '> <b>' + esc(r[1]) + '</b> <span class="hint">– ' + st + '</span></label>';
+      }).join('') + '</div>' +
+      '<label class="opt"><input type="radio" name="am" value="move" checked> <b>CHUYỂN từ trang khác sang</b> – bản gốc rời khỏi tờ cũ, không tạo trùng</label>' +
+      '<label class="opt"><input type="radio" name="am" value="copy"> <b>TẠO THÊM BẢN SAO</b> – bản gốc vẫn giữ ở tờ cũ, thêm 1 bản ở tờ này</label>';
+    dialog('Thêm hình chiếu vào trang này', body, [['Hủy', null], ['Thêm', function () {
+      var r = rows[+document.querySelector('input[name=av]:checked').value], mode = document.querySelector('input[name=am]:checked').value;
+      if (!r[2]) { // hình chưa bật: thêm mới vào trang, đặt tại điểm bấm
+        snapshot(); p.views = (p.views || []).concat([r[0]]);
+        var v = vprops(r[0], true); v.placement_mode = 'manual'; v.x_mm = pt[0]; v.y_mm = pt[1]; v.sheet = here;
+        renderPageProps(); changed(); requestRender(true);
+        msg('Đã thêm ' + r[1] + ' vào tờ ' + sheetCode(here) + ' (hình mới, không có bản gốc ở tờ khác).', 'ok'); return;
+      }
+      if (mode === 'move') {
+        if (sheetOf(r[0]) === here) { msg(r[1] + ' đã ở tờ này – chọn "Tạo thêm bản sao" nếu muốn có 2 hình.', 'warn'); return false; }
+        moveView(r[0], here, pt);
+      } else copyView(r[0], here, pt);
+    }, 'gold']]);
+  }
+  // Lấp khoảng trống: hình ở tờ khác vừa chỗ trống của tờ này -> đề xuất chuyển sang
+  function freeSpotJS(occ, bw, bh, area) {
+    var pad = 3;
+    for (var y = area[1]; y + bh <= area[3] + 0.01; y += 2) {
+      var x = area[0];
+      while (x + bw <= area[2] + 0.01) {
+        var hit = null;
+        for (var i = 0; i < occ.length; i++) { var b = occ[i]; if (x < b[0] + b[2] + pad && b[0] < x + bw + pad && y < b[1] + b[3] + pad && b[1] < y + bh + pad) { hit = b; break; } }
+        if (!hit) return [x, y];
+        x = hit[0] + hit[2] + pad;
+      }
+    }
+    return null;
+  }
+  function fillDialog() {
+    var info = S.info, here = S.sheet || 0;
+    if (!info || !info.layout || !info.area) { msg('Chưa có dữ liệu bố cục – thử lại sau khi dựng xong.', 'warn'); return; }
+    var occ = Object.keys(info.boxes).map(function (k) { return info.boxes[k]; });
+    if (info.legend_h) occ.push([info.area[2] - 64, info.area[3] - info.legend_h, 64, info.legend_h]);
+    var cands = Object.keys(info.layout).filter(function (k) {
+      var L = info.layout[k]; if (L[2] === here || posLocked(k) || !L[3]) return false;
+      var spot = freeSpotJS(occ, L[3], L[4], info.area); if (!spot) return false;
+      occ.push([spot[0], spot[1], L[3], L[4]]); return true;
+    });
+    if (!cands.length) { msg('Không có hình nào ở tờ khác vừa chỗ trống của tờ này.', 'warn'); return; }
+    dialog('Đề xuất lấp khoảng trống tờ ' + sheetCode(here), '<p>Các hình ở tờ khác vừa chỗ trống của tờ này:</p><div class="sub">' +
+      cands.map(function (k) { return '<label class="opt"><input type="checkbox" class="fc" value="' + esc(k) + '" checked> ' + esc(viewName(k)) + ' <span class="hint">– đang ở ' + esc(sheetCode(info.layout[k][2])) + '</span></label>'; }).join('') +
+      '</div><p class="hint">Các hình được CHUYỂN (không tạo bản sao). ↶ để hoàn tác.</p>',
+      [['Hủy', null], ['Chuyển sang tờ này', function () {
+        var ks = Array.prototype.map.call(document.querySelectorAll('.fc:checked'), function (c) { return c.value; });
+        if (!ks.length) return;
+        snapshot();
+        ks.forEach(function (k) { var v = vprops(k, true); v.placement_mode = 'auto'; v.x_mm = v.y_mm = null; v.sheet = here; });
+        changed(); requestRender(true); msg('Đã chuyển ' + ks.length + ' hình sang tờ ' + sheetCode(here) + '.', 'ok');
+      }, 'gold']]);
   }
   $('stage').addEventListener('contextmenu', function (e) {
     e.preventDefault();
+    if (!S.info) { hideCtx(); return; }
+    var mk = e.target.closest && e.target.closest('g.detmark');
+    if (mk) { showCtx(e.clientX, e.clientY, 'det:' + mk.getAttribute('data-det'), null); return; }
     var g = e.target.closest && e.target.closest('g.view');
-    if (!g || !S.info) { hideCtx(); return; }
+    if (!g) {
+      if (e.target.closest && e.target.closest('#paper svg')) showPaperCtx(e.clientX, e.clientY, toPaper(e));
+      else hideCtx();
+      return;
+    }
     var k = g.getAttribute('data-key');
     S.sel = k; S.selNote = null; highlight();
     showCtx(e.clientX, e.clientY, k, doorAt(k, toPaper(e)));
@@ -904,19 +1132,32 @@
     changed();
   });
 
+  function detStyle() { return { shape: $('detShape').value, arrow: $('detArrow').checked, bubble: $('detBubble').checked }; }
   function renderDetails() {
     var p = page(), box = $('detBox'); if (!p) { box.innerHTML = ''; return; }
     var list = p.details || [];
     box.innerHTML = (list.length ? list.map(function (d, i) {
-      return '<div class="sec" data-i="' + i + '"><div class="hd"><span class="lb">CHI TIẾT ' + d.n + '</span><span class="auto">từ ' +
-        esc(cap(S.viewNames[d.src] || d.src.replace('sec:', 'Mặt cắt ').replace(/([A-Z])$/, '$1-$1'))) + '</span><button class="del" title="Xoá chi tiết">✕</button></div>' +
-        '<label>Tỉ lệ 1:</label><input class="dsc" type="number" min="1" max="100" step="1" value="' + d.scale + '"></div>';
-    }).join('') : '') + '<p class="hint">Chọn công cụ ⊡ Chi tiết rồi kéo khung quanh vị trí cấu tạo trên một hình chiếu hoặc mặt cắt.</p>';
+      var mk = d.marker || {}, sh = sheetOf('det:' + d.n);
+      return '<div class="sec" data-i="' + i + '"><div class="hd"><span class="lb">' + esc(viewName('det:' + d.n)) + '</span><span class="auto">từ ' +
+        esc(viewName(d.src)) + (d.src_sheet != null ? ' (' + esc(sheetCode(d.src_sheet)) + ')' : '') + ' → ' + esc(sheetCode(sh == null ? 0 : sh)) + '</span><button class="del" title="Xoá chi tiết">✕</button></div>' +
+        '<div class="row"><div><label>Tên</label><input class="dlb" type="text" value="' + esc(d.label || '') + '" placeholder="CHI TIẾT ' + d.n + '"></div>' +
+        '<div style="max-width:70px"><label>Tỉ lệ 1:</label><input class="dsc" type="number" min="1" max="100" step="1" value="' + d.scale + '"></div></div>' +
+        '<div class="row"><div><select class="dmk"><option value="rect"' + ((mk.shape || 'rect') === 'rect' ? ' selected' : '') + '>Chữ nhật nét đứt</option>' +
+        '<option value="circle"' + (mk.shape === 'circle' ? ' selected' : '') + '>Tròn nét đứt</option><option value="ellipse"' + (mk.shape === 'ellipse' ? ' selected' : '') + '>Elip nét đứt</option></select></div></div>' +
+        '<div class="checks"><label><input type="checkbox" class="dar"' + (mk.arrow ? ' checked' : '') + '> Mũi tên</label><label><input type="checkbox" class="dbb"' + (mk.bubble !== false ? ' checked' : '') + '> Bóng số</label></div></div>';
+    }).join('') : '') + '<p class="hint">Chọn ⊡ Chi tiết rồi kéo khung trên một hình chiếu: chi tiết nằm ngay tờ đang trích. Chuột phải vào chi tiết hoặc marker để đổi tỷ lệ, kiểu, tên, chuyển trang…</p>';
   }
   $('detBox').addEventListener('change', function (e) {
-    if (!e.target.classList.contains('dsc')) return;
-    var d = page().details[+e.target.closest('.sec').dataset.i];
-    snapshot(); d.scale = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 4)); changed();
+    var el = e.target.closest('.sec'); if (!el) return;
+    var d = page().details[+el.dataset.i]; if (!d) return;
+    snapshot();
+    if (e.target.classList.contains('dsc')) d.scale = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 4));
+    if (e.target.classList.contains('dlb')) d.label = e.target.value.trim() || null;
+    d.marker = Object.assign({ shape: 'rect', arrow: false, bubble: true }, d.marker || {});
+    if (e.target.classList.contains('dmk')) d.marker.shape = e.target.value;
+    if (e.target.classList.contains('dar')) d.marker.arrow = e.target.checked;
+    if (e.target.classList.contains('dbb')) d.marker.bubble = e.target.checked;
+    changed();
   });
   $('detBox').addEventListener('click', function (e) {
     if (!e.target.classList.contains('del')) return;
@@ -934,10 +1175,20 @@
     var big = Math.max(rect[2] - rect[0], rect[3] - rect[1]), scale = 1;
     [1, 2, 4, 5, 10, 15, 20, 25].some(function (s) { scale = s; return big / s <= 70; }); // vừa khoảng 70 mm trên giấy
     snapshot(); p.details = p.details || [];
+    rect = rect.map(function (x) { return Math.round(x * 10) / 10; });
+    if (S.reDetail) { // chọn lại vùng trích cho chi tiết đã có
+      var od = p.details.filter(function (x) { return x.n === S.reDetail; })[0]; S.reDetail = null;
+      if (od) { od.src = key; od.rect = rect; od.src_sheet = S.sheet || 0; renderDetails(); changed(); requestRender(true); msg('Đã chọn lại vùng trích cho ' + viewName('det:' + od.n) + '.', 'ok'); return; }
+    }
     var n = p.details.reduce(function (m, d) { return Math.max(m, d.n); }, 0) + 1;
-    p.details.push({ n: n, src: key, rect: rect.map(function (x) { return Math.round(x * 10) / 10; }), scale: scale });
+    var st = detStyle();
+    // chi tiết nằm NGAY TỜ đang trích (chờ đặt vào chỗ trống của tờ này) – không tự về A-01
+    p.details.push({ n: n, src: key, rect: rect, scale: scale, src_sheet: S.sheet || 0, sheet: S.sheet || 0,
+                     marker: st, label: null });
+    vprops('det:' + n, true).sheet = S.sheet || 0;
+    S.pendingPlace = 'det:' + n;
     renderDetails(); changed(); requestRender(true);
-    msg('Đã tạo CHI TIẾT ' + n + ' (TL 1:' + scale + ').', 'ok');
+    msg('Đã tạo CHI TIẾT ' + n + ' (TL 1:' + scale + ') trên tờ ' + sheetCode(S.sheet || 0) + '.', 'ok');
   }
   var place = null; // trạng thái đặt leader (đã có điểm mũi tên)
   function ghost(cls, css) {
@@ -978,12 +1229,14 @@
       var froze = 0;
       Object.keys(info.layout).forEach(function (k) {
         var cur = vprops(k);
-        if (cur && cur.x_mm != null) return;
+        if (cur && cur.x_mm != null) { if (cur.sheet !== info.layout[k][2]) { cur.sheet = info.layout[k][2]; froze++; } return; } // đồng bộ số tờ khi tờ trống bị gộp
         var v = vprops(k, true), L = info.layout[k];
         v.placement_mode = 'auto'; v.x_mm = L[0]; v.y_mm = L[1]; v.sheet = L[2]; froze++;
       });
       if (froze) markDirty();
     }
+    if (S.pendingPlace && info.no_room && info.no_room.indexOf(S.pendingPlace) >= 0) noRoomDialog(S.pendingPlace);
+    S.pendingPlace = null;
     if (p && info.sections && p.sections == null) p.sections = info.sections; // nhận vị trí cắt plugin đề xuất
     renderSections(); renderDetails(); renderDoors(); if (S.selNote) renderNotes();
     renderNav();
