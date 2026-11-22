@@ -31,11 +31,24 @@ module MTDesign
                             'arrow' => mk['arrow'] == true, 'bubble' => mk['bubble'] != false },
               # tờ chứa hình nguồn lúc trích và tờ đặt chi tiết (mặc định = tờ trích)
               'src_sheet' => sheet.call(d['src_sheet']), 'sheet' => sheet.call(d['sheet']),
-              'fill' => d['fill'].nil? ? nil : d['fill'] == true } # nil = theo trang, true = tô vật liệu, false = nét đơn sắc
+              'fill' => d['fill'].nil? ? nil : d['fill'] == true, # nil = theo trang, true = tô vật liệu, false = nét đơn sắc
+              # 'enlarge' = phóng to vùng 2D; 'section' = chi tiết cấu tạo (mặt cắt thật qua hình học 3D)
+              'type' => d['type'] == 'section' ? 'section' : 'enlarge',
+              'cut' => clean_cut(d['cut']),
+              'depth' => d['depth'].is_a?(Numeric) && d['depth'].to_f.positive? ? d['depth'].to_f.clamp(1, 5000).round(1) : nil,
+              'labels' => d['labels'] != false }
           end
         end
 
         SHAPES = %w[rect circle ellipse].freeze
+
+        # Đường cắt trong vùng khoanh: orient 'v' (đường đứng, toạ độ u) | 'h' (ngang, toạ độ v); dir: hướng nhìn.
+        def clean_cut(c)
+          return nil unless c.is_a?(Hash)
+
+          { 'orient' => c['orient'] == 'h' ? 'h' : 'v', 'at' => c['at'].is_a?(Numeric) ? c['at'].to_f.round(1) : nil,
+            'dir' => c['dir'].nil? ? nil : (c['dir'].to_i.negative? ? -1 : 1) }
+        end
 
         def label(det)
           det['label'] || "CHI TIẾT #{det['n']}"

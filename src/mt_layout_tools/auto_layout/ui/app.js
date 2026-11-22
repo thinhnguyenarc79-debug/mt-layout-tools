@@ -567,13 +567,26 @@
       var fillOn = det.fill == null ? !!page().fill : det.fill;
       it('dfill1', 'Tô màu vật liệu', { on: fillOn }); it('dfill0', 'Nét kỹ thuật đơn sắc', { on: !fillOn });
       h.push('<div class="sep"></div>');
-      it('drename', 'Đổi tên chi tiết…'); it('dreselect', 'Chọn lại vùng trích chi tiết');
+      it('dtype', det.type === 'section' ? 'Chuyển thành phóng to vùng 2D' : 'Chuyển thành chi tiết cấu tạo (mặt cắt thật)');
+      if (det.type === 'section') {
+        var ct = det.cut || {};
+        it('dorient', 'Đổi hướng cắt → ' + (ct.orient === 'h' ? 'đứng' : 'ngang'));
+        it('dflip', 'Đảo hướng nhìn'); it('dpickcut', 'Đặt lại vị trí đường cắt…');
+        h.push('<div class="lb">Độ sâu thể hiện sau mặt cắt</div><div class="grid">' + [[0, 'Toàn bộ'], [20, '20'], [50, '50'], [100, '100'], [200, '200']].map(function (x) {
+          return '<span data-act="ddep:' + x[0] + '" class="' + ((det.depth || 0) === x[0] ? 'on' : '') + '">' + x[1] + '</span>'; }).join('') + '</div>');
+        it('dlabels', 'Chú thích vật liệu tự động', { on: det.labels !== false });
+      }
+      it('drename', 'Đổi tên chi tiết…'); it('dreselect', 'Chỉnh / chọn lại vùng trích chi tiết');
     }
     h.push('<div class="lb">' + (isDet ? 'Chuyển chi tiết sang trang' : 'Chuyển sang trang khác') + '</div>' + sheetGrid('mv:', S.sheet || 0));
     h.push('<div class="lb">' + (isDet ? 'Tạo bản sao chi tiết sang trang' : 'Tạo bản sao sang trang khác') + '</div>' + sheetGrid('cp:', null));
     it('copyhere', 'Tạo bản sao tại trang này');
     it('clip', 'Sao chép (để dán ở trang khác)');
-    if (!isDet) { it('refreshv', 'Cập nhật hình chiếu'); it('mkdet', 'Tạo chi tiết phóng to từ hình này'); }
+    if (!isDet) {
+      it('refreshv', 'Cập nhật hình chiếu');
+      h.push('<div class="lb">Trích chi tiết</div>');
+      it('mkdet', 'Phóng to vùng 2D…'); if (!/^iso/.test(k)) it('mkcdet', 'Trích chi tiết cấu tạo (mặt cắt thật)…');
+    }
     it('delv', isDet ? 'Xóa chi tiết' : 'Xóa hình chiếu');
     h.push('<div class="sep"></div>');
     it('relayout', 'Dàn trang lại…');
@@ -604,7 +617,17 @@
       else if (act === 'copyhere') copyView(k, S.sheet || 0, null);
       else if (act === 'clip') { S.clip = k; msg('Đã sao chép ' + viewName(k) + ' – chuột phải vào chỗ trống ở tờ cần dán → "Dán hình chiếu đã copy".', 'ok'); }
       else if (act === 'refreshv') $('refresh').click();
-      else if (act === 'mkdet') { setTool('detail'); msg('Kéo khung quanh vị trí cần phóng to trên ' + viewName(k) + '.', ''); }
+      else if (act === 'mkdet') { S.detMode = 'enlarge'; setTool('detail'); msg('Kéo khung quanh vị trí cần phóng to trên ' + viewName(k) + '.', ''); }
+      else if (act === 'mkcdet') { S.detMode = 'section'; setTool('detail'); msg('Kéo khung quanh vị trí cấu tạo cần làm rõ trên ' + viewName(k) + ' – plugin cắt thật qua hình học 3D tại giữa vùng.', ''); }
+      else if (act === 'dtype') editDetail(dn, function (d) {
+        d.type = d.type === 'section' ? 'enlarge' : 'section';
+        if (d.type === 'section' && !d.cut) d.cut = { orient: $('detOrient').value, at: null };
+      });
+      else if (act === 'dorient') editDetail(dn, function (d) { d.cut = { orient: (d.cut || {}).orient === 'h' ? 'v' : 'h', at: null, dir: null }; });
+      else if (act === 'dflip') editDetail(dn, function (d) { var c = d.cut || {}; var cur = c.dir == null ? (c.orient === 'h' ? -1 : 1) : c.dir; d.cut = Object.assign({}, c, { dir: -cur }); });
+      else if (act.indexOf('ddep:') === 0) editDetail(dn, function (d) { var v = +act.slice(5); d.depth = v || null; });
+      else if (act === 'dlabels') editDetail(dn, function (d) { d.labels = d.labels === false; });
+      else if (act === 'dpickcut') { S.pickCut = dn; msg('Bấm vào vị trí đặt đường cắt bên trong vùng gọi chi tiết trên hình nguồn.', ''); }
       else if (act === 'delv') deleteView(k);
       else if (act.indexOf('dsc:') === 0) editDetail(dn, function (d) { d.scale = +act.slice(4); });
       else if (act.indexOf('dmk:') === 0) editDetail(dn, function (d) { d.marker = Object.assign({}, d.marker || {}, { shape: act.slice(4) }); });
@@ -1261,7 +1284,7 @@
     var list = p.details || [];
     box.innerHTML = (list.length ? list.map(function (d, i) {
       var mk = d.marker || {}, sh = sheetOf('det:' + d.n);
-      return '<div class="sec" data-i="' + i + '"><div class="hd"><span class="lb">' + esc(viewName('det:' + d.n)) + '</span><span class="auto">từ ' +
+      return '<div class="sec" data-i="' + i + '"><div class="hd"><span class="lb">' + esc(viewName('det:' + d.n)) + '</span><span class="auto">' + (d.type === 'section' ? 'cấu tạo · ' : 'phóng to · ') + 'từ ' +
         esc(viewName(d.src)) + (d.src_sheet != null ? ' (' + esc(sheetCode(d.src_sheet)) + ')' : '') + ' → ' + esc(sheetCode(sh == null ? 0 : sh)) + '</span><button class="del" title="Xoá chi tiết">✕</button></div>' +
         '<div class="row"><div><label>Tên</label><input class="dlb" type="text" value="' + esc(d.label || '') + '" placeholder="CHI TIẾT ' + d.n + '"></div>' +
         '<div style="max-width:70px"><label>Tỉ lệ 1:</label><input class="dsc" type="number" min="1" max="100" step="1" value="' + d.scale + '"></div></div>' +
@@ -1306,12 +1329,21 @@
     var n = p.details.reduce(function (m, d) { return Math.max(m, d.n); }, 0) + 1;
     var st = detStyle();
     // chi tiết nằm NGAY TỜ đang trích (chờ đặt vào chỗ trống của tờ này) – không tự về A-01
-    p.details.push({ n: n, src: key, rect: rect, scale: scale, src_sheet: S.sheet || 0, sheet: S.sheet || 0,
-                     marker: st, label: null });
+    var dtype = S.detMode || $('detType').value; S.detMode = null;
+    var nd = { n: n, src: key, rect: rect, scale: scale, src_sheet: S.sheet || 0, sheet: S.sheet || 0, marker: st, label: null, type: dtype };
+    if (dtype === 'section') {
+      if (/^(iso|det:)/.test(key)) { msg('Chi tiết cấu tạo cần hình chiếu vuông góc hoặc mặt cắt làm nguồn.', 'err'); return; }
+      var ori = $('detOrient').value;
+      nd.cut = { orient: ori, at: Math.round((ori === 'v' ? (rect[0] + rect[2]) : (rect[1] + rect[3])) / 2 * 10) / 10 };
+      nd.depth = $('detDepth').value ? +$('detDepth').value : null;
+      nd.labels = true;
+    }
+    p.details.push(nd);
     vprops('det:' + n, true).sheet = S.sheet || 0;
     S.pendingPlace = 'det:' + n;
     renderDetails(); changed(); requestRender(true);
-    msg('Đã tạo CHI TIẾT ' + n + ' (TL 1:' + scale + ') trên tờ ' + sheetCode(S.sheet || 0) + '.', 'ok');
+    msg('Đã tạo CHI TIẾT ' + n + (dtype === 'section' ? ' – CẤU TẠO (mặt cắt thật qua hình học 3D, đường cắt giữa vùng; chuột phải để đổi hướng/vị trí cắt)' : ' – phóng to 2D') +
+        ' (TL 1:' + scale + ') trên tờ ' + sheetCode(S.sheet || 0) + '.', 'ok');
   }
   var place = null; // trạng thái đặt leader (đã có điểm mũi tên)
   function ghost(cls, css) {
@@ -1439,6 +1471,17 @@
         var r = $('stage').getBoundingClientRect();
         drag = { mode: 'detail', key: vk, a: pt, b: pt, x: e.clientX, y: e.clientY,
                  el: ghost('ghost-rect', { left: (e.clientX - r.left) + 'px', top: (e.clientY - r.top) + 'px', width: '0', height: '0' }) };
+      }
+      e.preventDefault(); return;
+    }
+    if (e.button === 0 && S.pickCut) { // đặt lại vị trí đường cắt của chi tiết cấu tạo
+      var pd = (page().details || []).filter(function (x) { return x.n === S.pickCut; })[0], pf = pd && S.info.frames[pd.src];
+      S.pickCut = null;
+      if (pf) {
+        var pp = toPaper(e), pu = (pp[0] - pf[0]) * pf[2], pv = (pp[1] - pf[1]) * pf[2], R0 = pd.rect, o = (pd.cut || {}).orient || 'v';
+        var at = o === 'v' ? Math.max(R0[0], Math.min(R0[2], pu)) : Math.max(R0[1], Math.min(R0[3], pv));
+        editDetail(pd.n, function (d) { d.cut = Object.assign({}, d.cut || {}, { at: Math.round(at * 10) / 10 }); });
+        msg('Đã đặt lại đường cắt.', 'ok');
       }
       e.preventDefault(); return;
     }

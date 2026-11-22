@@ -1,7 +1,7 @@
 {
-  "version": "2.11.0",
+  "version": "2.12.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "c42e9309490311451dd02451e48c2eab5e20d637e11b107d87cbf3848c7b8bb1",
-  "notes": "AUTO LAYOUT PRO v2.11.0: vùng trích chi tiết chính xác (đúng toạ độ khi zoom/pan, cắt tròn/elip thật, chỉnh bằng điểm điều khiển); đổi tỉ lệ chỉ hình đó, bố cục đã chốt không tự đổi tỉ lệ, xung đột hỏi cách xử lý; thêm hình có chọn tỉ lệ + xem trước vị trí; chuột phải gán cánh/vách/đợt... ngay trên bản vẽ 2D"
+  "sha256": "cc93d8507b85ff1ebe61320a64a0aed2b8d45f61a0a64a87b46e5930d83f7863",
+  "notes": "AUTO LAYOUT PRO v2.12.0: CHI TIẾT CẤU TẠO – mặt cắt thật qua hình học 3D trong vùng gọi (hướng cắt, độ sâu thể hiện), hatch theo vật liệu, DIM, chú thích vật liệu tự động; vẫn giữ chi tiết phóng to 2D"
 }

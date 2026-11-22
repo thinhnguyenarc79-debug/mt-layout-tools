@@ -64,6 +64,7 @@ module MTDesign
             @dir = sec['dir'].to_i.positive? ? 1 : -1
             @clipped = Geometry::Capture.new(cap.name, [], [], cap.materials, {})
             @cuts = []
+            @cut_mats = [] # vật liệu của mặt sinh ra từng đoạn nét cắt -> hatch theo vật liệu
             @phase = :clip_edges
             @i = 0
           end
@@ -152,7 +153,10 @@ module MTDesign
               poly << m
               hits << m
             end
-            @cuts << hits if hits.length == 2
+            if hits.length == 2
+              @cuts << hits
+              @cut_mats << tr[3]
+            end
             (1...poly.length - 1).each { |k| @clipped.triangles << [poly[0], poly[k], poly[k + 1], tr[3]] }
           end
 
@@ -171,9 +175,17 @@ module MTDesign
           def finalize
             v = @proj.result
             l, t = v[:origin]
-            segs = @cuts.map { |a, b| [@fn.call(a), @fn.call(b)].map { |p| [p[0] - l, p[1] - t] } }
-                        .reject { |a, b| Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.01 }
-            v[:cut] = { segs: segs, loops: SectionEngine.loops(segs) }
+            segs = []
+            smats = []
+            @cuts.each_with_index do |(a, b), i|
+              s2 = [@fn.call(a), @fn.call(b)].map { |p| [p[0] - l, p[1] - t] }
+              next if Math.hypot(s2[1][0] - s2[0][0], s2[1][1] - s2[0][1]) < 0.01
+
+              segs << s2
+              smats << @cut_mats[i]
+            end
+            lps = SectionEngine.loops(segs)
+            v[:cut] = { segs: segs, loops: lps, loop_mats: SectionEngine.loop_materials(lps, segs, smats, @cap.materials) }
             v[:section] = @sec
             v[:stats]['cut_segments'] = segs.length
             v[:stats]['cut_loops'] = v[:cut][:loops].length
@@ -181,6 +193,43 @@ module MTDesign
             @result = v
             @clipped = @proj = nil
             @phase = :done
+          end
+        end
+
+        # Vật liệu của từng vòng tiết diện: đa số theo các đoạn nét cắt chạm đỉnh của vòng. Trả tên vật liệu (nil nếu không có).
+        def loop_materials(lps, segs, mats, table)
+          key = ->(p) { [(p[0] * 100).round, (p[1] * 100).round] }
+          at = Hash.new { |h, k| h[k] = [] }
+          segs.each_with_index { |(a, b), i| at[key.call(a)] << mats[i]; at[key.call(b)] << mats[i] }
+          lps.map do |lp|
+            m = lp.flat_map { |p| at[key.call(p)] }.compact.tally.max_by { |_, n| n }&.first
+            m && table[m] ? table[m]['name'] : nil
+          end
+        end
+
+        # Kiểu hatch theo tên vật liệu (chỉ dựa trên vật liệu có trong model): [bước mm, kiểu] kiểu: :d45, :cross, :none
+        def hatch_style(name)
+          n = name.to_s.downcase
+          return [nil, :none] if n =~ /k[íi]nh|glass|g[ươ]+ng|mirror/
+          return [0.6, :cross] if n =~ /inox|th[ée]p|nh[ôo]m|kim lo|metal|steel|alu/
+          return [1.5, :cross] if n =~ /đá|da |stone|b[êe] ?t[ôo]ng|concrete|marble/
+
+          [1.2, :d45]
+        end
+
+        # Hatch theo vật liệu từng vòng (gỗ/ván: 45°, kim loại/đá: lưới chéo, kính: để trống).
+        def hatch_by_material(loops, names)
+          return hatch(loops) if names.nil? || names.compact.empty?
+
+          loops.each_index.group_by { |i| hatch_style(names[i]) }.flat_map do |(sp, kind), ids|
+            lps = ids.map { |i| loops[i] }
+            case kind
+            when :none then []
+            when :cross
+              mir = lps.map { |lp| lp.map { |p| [-p[0], p[1]] } }
+              hatch(lps, sp) + hatch(mir, sp).map { |a, b| [[-a[0], a[1]], [-b[0], b[1]]] }
+            else hatch(lps, sp)
+            end
           end
         end
 

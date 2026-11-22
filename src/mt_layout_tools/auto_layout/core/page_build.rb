@@ -317,8 +317,13 @@ module MTDesign
 
         # ---------- chi tiết phóng to ----------
         def details(job)
+          cons = []
           Array(@pg['details']).each do |det|
             src = @views.find { |vv| vv[:key] == det['src'] }
+            if det['type'] == 'section' && src
+              cons << [det, src]
+              next
+            end
             unless src
               @notes << "CHI TIẾT #{det['n']}: hình nguồn #{det['src']} không còn trên trang."
               next
@@ -332,8 +337,42 @@ module MTDesign
               @notes << e.message
             end
           end
-          copies
-          job.insert_next(chain_tasks + [finish_task])
+          job.insert_next(construction_tasks(cons) + [Job.once('bản sao') { |jj| copies; jj.insert_next(chain_tasks + [finish_task]) }])
+        end
+
+        # ---------- chi tiết cấu tạo: mặt cắt thật qua hình học 3D (theo lô) ----------
+        def construction_tasks(list)
+          list.map do |det, src|
+            key = DetailEngine.key(det)
+            st = {}
+            guarded(DetailEngine.label(det), key) do |job|
+              cache[:views] ||= {}
+              ck = "#{cap_key(:all)}|cdet|#{src[:key]}|#{det.values_at('rect', 'cut', 'depth', 'labels').to_json}"
+              v = cache[:views][ck]
+              unless v
+                st[:plan] ||= ConstructionDetail.plan(src, det)
+                pl = st[:plan]
+                cap = cap_for(:all)
+                if pl[:depth] && !st[:limited]
+                  st[:far] ||= SectionEngine::SectionBuilder.new(cap, ConstructionDetail.far_plane(pl, pl[:depth]))
+                  next false unless st[:far].clip_step(job)
+
+                  st[:limited] = st[:far].clipped
+                end
+                st[:sb] ||= SectionEngine::SectionBuilder.new(st[:limited] || cap, pl)
+                next false unless st[:sb].call(job)
+
+                v = ConstructionDetail.crop(st[:sb].result, pl, det)
+                cache[:views][ck] = v
+              end
+              dv = v.dup
+              dv[:fixed_scale] = det['scale']
+              dv[:name] = DetailEngine.label(det)
+              dv.delete(:own_scale)
+              @views << dv
+              true
+            end
+          end
         end
 
         # ---------- bản sao hình chiếu (cùng hình học, vị trí / tỉ lệ / tờ riêng) ----------

@@ -197,6 +197,13 @@
     <h3>Chi tiết phóng to</h3>
     <div class="body">
       <div class="row">
+        <div><label>Loại chi tiết khi trích</label><select id="detType"><option value="enlarge">Phóng to vùng 2D</option><option value="section">Chi tiết cấu tạo (mặt cắt thật 3D)</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>Đường cắt</label><select id="detOrient"><option value="v">Đứng (nhìn ngang)</option><option value="h">Ngang (nhìn từ trên)</option></select></div>
+        <div><label>Độ sâu thể hiện</label><select id="detDepth"><option value="">Toàn bộ</option><option value="20">20 mm</option><option value="50">50 mm</option><option value="100">100 mm</option><option value="200">200 mm</option></select></div>
+      </div>
+      <div class="row">
         <div><label>Kiểu marker mặc định</label><select id="detShape"><option value="rect">Chữ nhật nét đứt</option><option value="circle">Tròn nét đứt</option><option value="ellipse">Elip nét đứt</option></select></div>
       </div>
       <div class="checks"><label><input id="detArrow" type="checkbox"> Có mũi tên</label><label><input id="detBubble" type="checkbox" checked> Bóng số tham chiếu</label></div>

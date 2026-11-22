@@ -52,7 +52,8 @@ module MTDesign
         end
 
         def box_w(v, s)
-          v[:w] / sc(v, s) + (v[:dims] ? M_LEFT + M_RIGHT : 4)
+          lab = v[:mat_labels] && !v[:mat_labels].empty? ? 8 + v[:mat_labels].map { |nm, _| [nm.to_s.length, 40].min }.max * 1.25 : 0
+          v[:w] / sc(v, s) + (v[:dims] ? M_LEFT + M_RIGHT : 4) + lab
         end
 
         def box_h(v, s)
@@ -405,9 +406,11 @@ module MTDesign
             if v[:key] == 'iso' && page['iso_hidden'] && v[:hlines]
               v[:hlines].each { |a, b| cv.line(tf.call(a), tf.call(b), 0.13, '#8A8F8B', [1.2, 0.8]) }
             end
-            polylines(v, tf).each { |pl| cv.polyline(pl, 0.25, INK) }
-            draw_cut(cv, v, tf)
+            polylines(v, tf).each { |pl| cv.polyline(pl, (page['pens'] || {})['line'] || 0.25, INK) }
+            draw_cut(cv, v, tf, page['pens'])
             cv.polyline(v[:border].map(&tf), 0.18, CUT_RED, [1.5, 0.8]) if v[:border] # viền chi tiết tròn/elip
+            cv.rect(ox, oy, vw, vh, nil, '#8A8F8B', 0.2) if v[:frame] # khung chi tiết cấu tạo
+            draw_mat_labels(cv, v, tf, ox + vw + (v[:dims] ? M_RIGHT : 2)) if v[:mat_labels] && !v[:mat_labels].empty?
             DoorSymbols.draw(cv, v, tf, page['door_symbols'])
             @obstacles = []
             section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
@@ -426,12 +429,30 @@ module MTDesign
           [ox, oy, s, v[:w], v[:h]].map { |n| n.round(4) }
         end
 
-        def draw_cut(cv, v, tf)
+        def draw_cut(cv, v, tf, pen = nil)
           return unless v[:cut]
 
           loops = v[:cut][:loops].map { |lp| lp.map(&tf) }
-          SectionEngine.hatch(loops).each { |a, b| cv.line(a, b, 0.13, HATCH) }
-          chain(v[:cut][:segs].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, 0.5, INK) }
+          pen ||= {}
+          SectionEngine.hatch_by_material(loops, v[:cut][:loop_mats]).each { |a, b| cv.line(a, b, pen['hatch'] || 0.13, HATCH) }
+          chain(v[:cut][:segs].map { |a, b| [tf.call(a), tf.call(b)] }).each { |pl| cv.polyline(pl, pen['cut'] || 0.5, INK) }
+        end
+
+        # Chú thích vật liệu của chi tiết cấu tạo: chấm + mũi tên từ tiết diện tới tên vật liệu bên phải khung.
+        def draw_mat_labels(cv, v, tf, xr)
+          n = v[:mat_labels].length
+          ys = v[:mat_labels].map { |_, c| tf.call(c)[1] }
+          y0 = ys.min
+          v[:mat_labels].each_with_index do |(name, c), i|
+            p = tf.call(c)
+            ty = [ys[i], y0 + i * 4.5].max
+            tx = xr + 6
+            cv.circle(p, 0.35, INK, INK, 0.1)
+            cv.line(p, [tx - 1, ty], 0.15, INK)
+            cv.line([tx - 1, ty], [tx + cv.fit(name.to_s, 2.2, 60).length * 1.2, ty], 0.15, INK)
+            cv.text_left(cv.fit(name.to_s, 2.2, 60), tx, ty - 1.4, 2.2, INK)
+          end
+          n
         end
 
         # Vẽ lại vùng khoanh của hình nguồn ở tỉ lệ chi tiết (màu, nét, nét cắt, hatch thật), có khung.
@@ -447,7 +468,7 @@ module MTDesign
             src[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if fill
             chain(v[:lines].map { |a, b| [[ox + a[0] / s, oy + a[1] / s], [ox + b[0] / s, oy + b[1] / s]] })
               .each { |pl| cv.polyline(pl, 0.3, INK) }
-            draw_cut(cv, src, tf)
+            draw_cut(cv, src, tf, page['pens'])
           end
           if shape == 'rect'
             cv.clip(ox, oy, vw, vh, &body)
@@ -484,6 +505,7 @@ module MTDesign
                 cv.polyline([[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]], [a[0], a[1]]], 0.25, CUT_RED, dash)
                 edge = [b[0], a[1]]
               end
+              draw_cut_mark(cv, v, tf, d) if d['type'] == 'section'
               c = mk['arrow'] ? [edge[0] + 6.5, edge[1] - 6.5] : [edge[0] + 2.2, edge[1] - 2.2]
               if mk['arrow']
                 # mũi tên từ ký hiệu tham chiếu chỉ vào vùng trích
@@ -504,6 +526,33 @@ module MTDesign
                 cv.text(d['n'].to_s, c[0], c[1], 2.4, 0, CUT_RED)
               end
             end
+          end
+        end
+
+        # Đường cắt của chi tiết cấu tạo trong vùng khoanh: nét gạch chấm đậm + 2 mũi tên chỉ hướng nhìn.
+        def draw_cut_mark(cv, v, tf, d)
+          x0, y0, x1, y1 = d['rect']
+          cut = d['cut'] || {}
+          orient = cut['orient'] == 'h' ? 'h' : 'v'
+          at = cut['at'] || (orient == 'v' ? (x0 + x1) / 2.0 : (y0 + y1) / 2.0)
+          sign = 1
+          if v[:fn]
+            m, = ConstructionDetail.linear(v[:fn])
+            row = orient == 'v' ? 0 : 1
+            ax = ConstructionDetail.axis_of(m, row)
+            sign = ax && m[row][ax].negative? ? -1 : 1
+          end
+          dir = cut['dir'].nil? ? (orient == 'h' ? -1 : 1) : (cut['dir'].to_i.negative? ? -1 : 1)
+          look = sign * dir # phía được giữ lại / hướng nhìn trên hình nguồn
+          a, b = orient == 'v' ? [[at, y0], [at, y1]] : [[x0, at], [x1, at]]
+          pa = tf.call(a)
+          pb = tf.call(b)
+          cv.line(pa, pb, 0.35, CUT_RED, [3.0, 0.8, 0.6, 0.8])
+          [pa, pb].each do |p|
+            q = orient == 'v' ? [p[0] + look * 2.6, p[1]] : [p[0], p[1] + look * 2.6]
+            cv.line(p, q, 0.3, CUT_RED)
+            w = orient == 'v' ? [[q[0] - look * 0.9, q[1] - 0.6], [q[0] - look * 0.9, q[1] + 0.6]] : [[q[0] - 0.6, q[1] - look * 0.9], [q[0] + 0.6, q[1] - look * 0.9]]
+            w.each { |z| cv.line(q, z, 0.3, CUT_RED) }
           end
         end
 
