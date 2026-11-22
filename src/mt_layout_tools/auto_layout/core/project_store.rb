@@ -108,6 +108,8 @@ module MTDesign
             'view_props' => clean_view_props(pg['view_props']),
             # ký hiệu hướng mở cánh (người dùng chọn): { "pid/pid" => {type, hinge, slide, open, style, visible} }
             'door_symbols' => DoorSymbols.clean(pg['door_symbols']),
+            # cấu hình ký hiệu cánh mở nhìn từ trên (mặt bằng / mặt cắt nhìn từ trên) – dùng chung mọi cánh
+            'swing' => DoorSwing.clean(pg['swing']),
             # bản sao hình chiếu: [{ 'n', 'src' (key hình gốc) }] -> hình 'cp:n' (độc lập vị trí/tỉ lệ/tờ)
             'copies' => clean_copies(pg['copies']),
             'offsets' => offs.each_with_object({}) do |(k, v), h|

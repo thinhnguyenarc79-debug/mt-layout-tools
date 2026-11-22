@@ -486,14 +486,41 @@
     Object.keys(patch).forEach(function (x) { d[x] = patch[x]; });
     p.door_symbols[path] = d; changed(); renderSyms();
   }
+  // cấu hình ký hiệu mở nhìn từ trên – dữ liệu chung page.swing (mọi hình nhìn từ trên dùng chung)
+  function renderSwing() {
+    var p = page(); if (!p) return;
+    var w = p.swing || {};
+    $('swPlan').checked = w.plan !== false; $('swSec').checked = w.section !== false;
+    var a = w.angle || 90, sel = $('swAngle');
+    if (!Array.prototype.some.call(sel.options, function (o) { return +o.value === a; })) {
+      var op = document.createElement('option'); op.value = a; op.textContent = a + '°'; sel.insertBefore(op, sel.lastChild);
+    }
+    sel.value = String(a); $('swOpen').value = w.open || 'out'; $('swLeaf').value = w.leaf || 'solid'; $('swArc').value = w.arc || 'dash';
+  }
+  ['swPlan', 'swSec', 'swAngle', 'swOpen', 'swLeaf', 'swArc'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      var p = page(); if (!p) return;
+      var ang = $('swAngle').value;
+      if (ang === 'custom') {
+        var v = window.prompt('Góc mở ký hiệu (5 – 180°):', String((p.swing || {}).angle || 90));
+        ang = v === null ? String((p.swing || {}).angle || 90) : v;
+      }
+      ang = Math.max(5, Math.min(180, parseFloat(ang) || 90));
+      snapshot();
+      p.swing = { plan: $('swPlan').checked, section: $('swSec').checked, angle: ang, open: $('swOpen').value, leaf: $('swLeaf').value, arc: $('swArc').value };
+      renderSwing(); changed();
+    });
+  });
   function renderSyms() {
     var p = page(), box = $('symList'); if (!box) return;
+    renderSwing();
     var list = p ? doorList() : [];
     var ds = (p && p.door_symbols) || {};
     box.innerHTML = list.length ? list.map(function (d) {
       var cur = ds[d.path] || {}, t = cur.type || 'none';
       return '<div class="it" data-path="' + esc(d.path) + '"><span class="nm" title="' + esc(d.path) + '">' + esc(d.name) + '</span>' +
         '<select class="sym">' + Object.keys(DOOR_TYPES).map(function (x) { return '<option value="' + x + '"' + (x === t ? ' selected' : '') + '>' + DOOR_TYPES[x] + '</option>'; }).join('') + '</select>' +
+        '<select class="opn" title="Hướng mở (mặt bằng / mặt cắt nhìn từ trên)"><option value="">mặc định</option><option value="out"' + (cur.open === 'out' ? ' selected' : '') + '>ra ngoài</option><option value="in"' + (cur.open === 'in' ? ' selected' : '') + '>vào trong</option></select>' +
         '<input class="vis" type="checkbox" title="Hiện ký hiệu"' + (cur.visible === false ? '' : ' checked') + '></div>';
     }).join('') : '<p class="hint">Chưa có cánh trên trang này (gán vai trò "Cánh" ở mục CẤU TẠO TỦ).</p>';
   }
@@ -501,6 +528,7 @@
     var it = e.target.closest('.it'); if (!it) return;
     if (e.target.classList.contains('sym')) setDoorSym(it.dataset.path, { type: e.target.value });
     if (e.target.classList.contains('vis')) setDoorSym(it.dataset.path, { visible: e.target.checked });
+    if (e.target.classList.contains('opn')) setDoorSym(it.dataset.path, { open: e.target.value || null });
   });
   $('symApply').onclick = function () {
     var p = page(); if (!p) return;

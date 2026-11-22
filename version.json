@@ -1,7 +1,7 @@
 {
-  "version": "2.12.0",
+  "version": "2.13.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "cc93d8507b85ff1ebe61320a64a0aed2b8d45f61a0a64a87b46e5930d83f7863",
-  "notes": "AUTO LAYOUT PRO v2.12.0: CHI TIẾT CẤU TẠO – mặt cắt thật qua hình học 3D trong vùng gọi (hướng cắt, độ sâu thể hiện), hatch theo vật liệu, DIM, chú thích vật liệu tự động; vẫn giữ chi tiết phóng to 2D"
+  "sha256": "1ba7d30f6aff659fb573a5fc2cf30330dba84e421ef110415959a589760e69b8",
+  "notes": "AUTO LAYOUT PRO v2.13.0: ký hiệu cánh mở trên mặt bằng và mặt cắt nhìn từ trên tự đồng bộ từ ký hiệu mặt đứng (quay quanh trục bản lề thật, không theo tên mặt cắt), cấu hình góc mở / mở vào-ra / kiểu nét"
 }

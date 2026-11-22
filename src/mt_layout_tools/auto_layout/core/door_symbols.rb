@@ -51,7 +51,8 @@ module MTDesign
               'type' => type,
               'hinge' => HINGE[type],            # vị trí bản lề suy ra từ loại người dùng chọn
               'slide' => SLIDE[type],            # hướng lùa / kéo
-              'open' => d['open'].to_s == 'in' ? 'in' : 'out',
+              'open' => %w[in out].include?(d['open'].to_s) ? d['open'].to_s : nil, # nil = theo mặc định của trang
+              'angle' => d['angle'].to_f.between?(5, 180) ? d['angle'].to_f.round(1) : nil,
               'style' => clean_style(d['style']),
               'visible' => d['visible'] != false
             }

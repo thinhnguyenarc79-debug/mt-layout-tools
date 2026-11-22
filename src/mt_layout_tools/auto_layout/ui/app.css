@@ -175,3 +175,5 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 @media (max-width: 1560px) { #top .brand { display: none; } #top { gap: 6px; } #top .tools { gap: 6px; } }
 
 #paper g.edhandles rect.dh { cursor: nwse-resize; }
+
+#symList .it select.opn { width: 78px; }

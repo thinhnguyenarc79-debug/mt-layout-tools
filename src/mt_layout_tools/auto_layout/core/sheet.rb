@@ -53,11 +53,13 @@ module MTDesign
 
         def box_w(v, s)
           lab = v[:mat_labels] && !v[:mat_labels].empty? ? 8 + v[:mat_labels].map { |nm, _| [nm.to_s.length, 40].min }.max * 1.25 : 0
-          v[:w] / sc(v, s) + (v[:dims] ? M_LEFT + M_RIGHT : 4) + lab
+          sp = v[:swing_pad] ? (v[:swing_pad][0] + v[:swing_pad][2]) / sc(v, s) : 0
+          v[:w] / sc(v, s) + (v[:dims] ? M_LEFT + M_RIGHT : 4) + lab + sp
         end
 
         def box_h(v, s)
-          v[:h] / sc(v, s) + (v[:dims] ? M_TOP : 4) + M_BOTTOM
+          sp = v[:swing_pad] ? (v[:swing_pad][1] + v[:swing_pad][3]) / sc(v, s) : 0
+          v[:h] / sc(v, s) + (v[:dims] ? M_TOP : 4) + M_BOTTOM + sp
         end
 
         def layout_size(rows, s)
@@ -395,8 +397,10 @@ module MTDesign
 
         def draw_view(cv, v, s, x, base, page)
           s = sc(v, s)
-          ox = x + (v[:dims] ? M_LEFT : 2)
+          pad = (v[:swing_pad] || [0, 0, 0, 0]).map { |n| n / s } # chỗ cho cung mở cánh (mm giấy)
+          ox = x + (v[:dims] ? M_LEFT : 2) + pad[0]
           vw, vh = v[:w] / s, v[:h] / s
+          base -= pad[3]
           oy = base - vh
           tf = ->(p) { [ox + p[0] / s, oy + p[1] / s] }
           if v[:detail]
@@ -412,19 +416,31 @@ module MTDesign
             cv.rect(ox, oy, vw, vh, nil, '#8A8F8B', 0.2) if v[:frame] # khung chi tiết cấu tạo
             draw_mat_labels(cv, v, tf, ox + vw + (v[:dims] ? M_RIGHT : 2)) if v[:mat_labels] && !v[:mat_labels].empty?
             DoorSymbols.draw(cv, v, tf, page['door_symbols'])
+            DoorSwing.draw(cv, v, tf, DoorSwing.clean(page['swing']))
             @obstacles = []
             section_marks(cv, v, s, ox, oy, page['sections']) if v[:origin] && MARK_VIEWS.include?(v[:key])
             detail_marks(cv, v, tf, s, page['details'])
           end
           if v[:dims] && page.fetch('dims', true)
             obs = Array(@obstacles) + note_boxes(cv, page['notes'])
-            r = DimensionEngine.draw(cv, v, s, ox, oy, page.merge('obstacles' => obs))
+            dpg = page.merge('obstacles' => obs)
+            if v[:swing_pad]
+              # dãy DIM lùi ra ngoài cung mở cánh
+              doff = (page['dimoff'] || {}).dup
+              o = (doff[v[:key].to_s] || {}).dup
+              o['top'] = o['top'].to_f + pad[1]
+              o['left'] = o['left'].to_f + pad[0]
+              o['right'] = o['right'].to_f + pad[2]
+              doff[v[:key].to_s] = o
+              dpg['dimoff'] = doff
+            end
+            r = DimensionEngine.draw(cv, v, s, ox, oy, dpg)
             if r['moved']
               cv.text('DIM chi tiết: xem MẶT ĐỨNG THÁO CÁNH / MẶT CẮT', ox + vw / 2, base + 13.5, 2.0, 0, GREY)
             end
           end
           @obstacles = nil
-          caption(cv, v[:name], "TL 1:#{s}", ox + vw / 2, base + 6.5)
+          caption(cv, v[:name], "TL 1:#{s}", ox + vw / 2, base + pad[3] + 6.5)
           cv.text('BẢN XEM TRƯỚC – CHƯA KHỬ ĐỦ NÉT KHUẤT', ox + vw / 2, base + 13.5, 2.2, 0, '#B3261E') if v[:level].to_i >= 3
           [ox, oy, s, v[:w], v[:h]].map { |n| n.round(4) }
         end

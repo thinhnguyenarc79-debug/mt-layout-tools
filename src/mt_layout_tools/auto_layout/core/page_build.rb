@@ -425,6 +425,7 @@ module MTDesign
             @pw, @ph = Sheet.paper(@project['paper'])
             @pg['has_detail_view'] = @views.any? { |v| v[:key] == 'open' || v[:cut] }
             apply_view_props
+            apply_swings
             sheets = Sheet.paginate(@views, @mats, @pg, @pw, @ph)
             @outputs = Array.new(sheets.length)
             @base_code = @numbering.call(@pg, sheets.length)
@@ -450,6 +451,22 @@ module MTDesign
             # chưa có toạ độ nhưng đã định tờ -> đặt vào chỗ trống của ĐÚNG tờ đó (không tự đưa về A-01)
             v[:want_sheet] = !v[:pin] && vp && vp['sheet'] ? vp['sheet'].to_i : nil
           end
+        end
+
+        # Ký hiệu cánh mở nhìn từ trên: tính lại mỗi lần dựng từ dữ liệu ký hiệu cánh chung (không lưu riêng từng hình)
+        def apply_swings
+          syms = @pg['door_symbols'] || {}
+          if syms.none? { |_, s| DoorSwing::HINGED.include?(s['type'].to_s) && s['visible'] != false }
+            @views.each { |v| v[:swings] = v[:swing_pad] = nil }
+            return
+          end
+          cap = cap_for(:all)
+          fr = ((cache[:swing_frames] ||= {})[cap_key(:all)] ||= DoorSwing.frames(cap))
+          cs = fr.values.flat_map(&:corners)
+          centre = cs.empty? ? [0.0, 0.0, 0.0] : (0..2).map { |k| cs.sum { |c| c[k] } / cs.length }
+          front_g = Geometry::HiddenFill.viewer_dir(Geometry::VIEWS['front'][1])
+          st = DoorSwing.clean(@pg['swing'])
+          @views.each { |v| DoorSwing.apply(v, fr, syms, st, front_g, centre) }
         end
 
         def sheet_tasks(idx, total, group, forced, note)
