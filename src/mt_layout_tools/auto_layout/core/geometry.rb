@@ -618,9 +618,13 @@ module MTDesign
           len = Math.sqrt(n.sum { |x| x * x })
           return hex if len < EPS
 
-          k = 0.72 + 0.28 * (n.zip(ISO_LIGHT).sum { |x, y| x * y } / len).abs
-          rgb = hex[1..-1].scan(/../).map { |hh| (hh.to_i(16) * k).round.clamp(0, 255) }
-          format('#%02X%02X%02X', *rgb)
+          k = 0.72 + 0.28 * ((n[0] * ISO_LIGHT[0] + n[1] * ISO_LIGHT[1] + n[2] * ISO_LIGHT[2]) / len).abs
+          base = (@rgb_of ||= {})[hex] ||= hex[1..-1].scan(/../).map { |hh| hh.to_i(16) }
+          r = (base[0] * k).round.clamp(0, 255)
+          g = (base[1] * k).round.clamp(0, 255)
+          b = (base[2] * k).round.clamp(0, 255)
+          # cùng kết quả như trước, chỉ nhớ chuỗi màu đã định dạng (v2.17: hàng chục nghìn mảnh/hình trục đo)
+          (@hex_of ||= {})[(r << 16) | (g << 8) | b] ||= format('#%02X%02X%02X', r, g, b)
         end
       end
     end

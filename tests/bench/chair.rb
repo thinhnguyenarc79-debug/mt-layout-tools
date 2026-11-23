@@ -65,26 +65,29 @@ module Chair
   end
 
   # mức chi tiết: seg = số đoạn mỗi cung (SketchUp mặc định 12–24; ghế đẹp thường 48–96)
-  def build(cap, hard: :smooth, seg: 48)
+  MATS = { 'Gỗ sồi' => '#A97C50', 'Mây đan' => '#5A3E28', 'Gỗ óc chó' => '#4E3524', 'Đệm' => '#8C8C7A' }.freeze
+
+  def build(cap, hard: :smooth, seg: 48, multi: false)
+    MATS.each { |k, c| cap.materials[k] = { 'name' => k, 'color' => c } }
     m = 'Gỗ sồi'
-    cap.materials[m] = { 'name' => m, 'color' => '#A97C50' }
+    mm = ->(k) { multi ? k : m }
     # 4 chân cong, thuôn
     [[40, 40, -60], [460, 40, 60], [40, 440, -60], [460, 440, 60]].each do |x, y, bx|
       sweep(cap, arc([x, y, 0], [x, y, 440], [bx * 0.5, 0, 0], seg), seg / 2, 18, 18, hard, m)
     end
     # mặt ngồi lõm 500 x 480, dày 30 (2 mặt)
     [440, 470].each do |z0|
-      surface(cap, seg, seg, hard, m) { |u, v| [u * 500, v * 480, z0 - 25 * Math.sin(Math::PI * u) * Math.sin(Math::PI * v)] }
+      surface(cap, seg, seg, hard, mm.call('Mây đan')) { |u, v| [u * 500, v * 480, z0 - 25 * Math.sin(Math::PI * u) * Math.sin(Math::PI * v)] }
     end
     # 5 nan tựa lưng uốn cong
     5.times do |k|
       x = 60 + k * 95
-      sweep(cap, arc([x, 470, 470], [x, 520, 900], [0, 60, 0], seg), 16, 22, 8, hard, m)
+      sweep(cap, arc([x, 470, 470], [x, 520, 900], [0, 60, 0], seg), 16, 22, 8, hard, mm.call('Gỗ óc chó'))
     end
     # khung tựa trên cong
     sweep(cap, arc([20, 520, 900], [480, 520, 900], [0, 40, 30], seg * 2), seg / 2, 30, 20, hard, m)
     # 2 tay vịn cong
-    [0, 500].each { |x| sweep(cap, arc([x, 40, 650], [x, 500, 700], [0, 0, 60], seg * 2), seg / 2, 22, 16, hard, m) }
+    [0, 500].each { |x| sweep(cap, arc([x, 40, 650], [x, 500, 700], [0, 0, 60], seg * 2), seg / 2, 22, 16, hard, mm.call('Đệm')) }
     # giằng chân
     [[40, 460], [440, 440]].each { |y0, _| sweep(cap, arc([40, y0, 150], [460, y0, 150], [0, 0, -20], seg), 16, 10, 10, hard, m) }
     cap

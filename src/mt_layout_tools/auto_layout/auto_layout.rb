@@ -20,6 +20,7 @@ require_relative 'core/door_swing'
 require_relative 'core/manual_dim'
 require_relative 'core/dim_edit'
 require_relative 'core/perf_probe'
+require_relative 'core/model_watch'
 require_relative 'core/sheet'
 require_relative 'core/page_build'
 require_relative 'core/model_scanner'
@@ -45,7 +46,7 @@ module MTDesign
             guard(@dialog, 'scan') { on_scan(@dialog, nil) } # bấm lại nút = lấy đối tượng vừa chọn
             return
           end
-          reset_cache
+          keep_or_reset_cache # model không đổi từ lần trước -> giữ hình đã dựng, mở lại tức thì
           d = UI::HtmlDialog.new(dialog_title: 'AUTO LAYOUT PRO – MT Layout Tools', preferences_key: 'MTDesign_AutoLayout',
                                  width: 1400, height: 860, min_width: 1000, min_height: 620,
                                  resizable: true, scrollable: false, style: UI::HtmlDialog::STYLE_DIALOG)
@@ -65,7 +66,7 @@ module MTDesign
           end
           d.set_on_closed do
             @job&.cancel!
-            reset_cache
+            reset_cache unless ModelWatch.key(model) # theo dõi được thay đổi -> giữ cache cho lần mở sau
           end
           @dialog = d
           d.show
@@ -85,6 +86,13 @@ module MTDesign
         def reset_cache
           @cache = {}
           @extractor = Extractor.new
+          @cache_key = ModelWatch.key(model)
+        end
+
+        # Cache gắn với [model, phiên bản model]: có transaction mới (sửa hình, undo, redo...) hoặc đổi file -> bỏ.
+        def keep_or_reset_cache
+          k = ModelWatch.key(model)
+          reset_cache if k.nil? || k != @cache_key || @cache.nil?
         end
 
         def push(d, kind, data)
@@ -306,7 +314,8 @@ module MTDesign
         end
 
         def env
-          @cache ||= {}
+          k = ModelWatch.key(model)
+          reset_cache if @cache.nil? || (k && k != @cache_key) # model đã đổi thật -> đọc lại
           @extractor ||= Extractor.new
           Env.new(@cache, @extractor)
         end
@@ -401,7 +410,16 @@ module MTDesign
           job = start_job(d, 'perf', pb.tasks, lambda do
             outs = pb.outputs
             wall = ((Time.now - t0) * 1000).round
-            report = { 'model' => stats, 'name' => root.name.to_s.empty? ? root.definition.name.to_s : root.name.to_s,
+            # dựng lại lần 2 với cache (như khi sửa DIM/chữ, dời hình, chuyển tờ, mở lại cửa sổ khi model không đổi)
+            t1 = Time.now
+            pb2 = PageBuild.new(env, project, page, :svg, lambda { |p, n|
+              ProjectStore.sheet_codes(project, { p['id'] => n })[p['id']].first
+            })
+            j2 = Job.new('perf2', timer: ->(_b) {})
+            pb2.tasks.each { |tk| j2.add(tk) }
+            j2.run_sync
+            warm = ((Time.now - t1) * 1000).round
+            report = { 'warm_ms' => warm, 'warm_timings_ms' => PerfProbe.timings(j2).select { |_, ms| ms >= 5 }, 'model' => stats, 'name' => root.name.to_s.empty? ? root.definition.name.to_s : root.name.to_s,
                        'timings_ms' => PerfProbe.timings(job), 'cpu_ms' => (job.timings.values.sum * 1000).round, 'wall_ms' => wall,
                        'views' => PerfProbe.view_stats(pb.views), 'sheets' => PerfProbe.sheet_stats(outs),
                        'sketchup' => Sketchup.version.to_s, 'ruby' => RUBY_VERSION, 'plugin' => MTDesign::LayoutTools::VERSION }
@@ -432,16 +450,28 @@ module MTDesign
           push(d, 'snap', data.merge('page_id' => q['page_id'], 'key' => q['key'].to_s))
         end
 
-        # "Cập nhật bản vẽ": đọc lại hình học từ SketchUp (bỏ cache) rồi dựng lại.
+        # "Cập nhật bản vẽ": model đã đổi -> đọc lại hình học rồi dựng lại. Model KHÔNG đổi (không có transaction nào
+        # kể từ lần đọc) -> dùng lại hình đã dựng; bấm lại trong 10 giây để buộc đọc lại toàn bộ.
         def on_refresh(d, arg)
           @job&.cancel!
-          reset_cache
+          k = ModelWatch.key(model)
+          force = @last_refresh && Time.now - @last_refresh < 10
+          @last_refresh = Time.now
+          if k && k == @cache_key && !force
+            push(d, 'saved', { 'message' => 'Model không thay đổi kể từ lần đọc trước – dùng lại hình đã dựng. ' \
+                                             'Bấm "Cập nhật" lần nữa trong 10 giây để buộc đọc lại toàn bộ.' })
+          else
+            reset_cache
+            @last_refresh = nil
+          end
           on_render(d, arg)
         end
 
         # LƯU DỰ ÁN chính thức vào dữ liệu của file SKP (kiểm tra đọc lại). Không dàn trang lại.
         def on_save(d, arg)
+          stale = ModelWatch.key(model) != @cache_key
           project = ProjectStore.save(model, ProjectStore.clean(parse(arg)))
+          @cache_key = ModelWatch.key(model) unless stale # chỉ ghi dữ liệu dự án, hình học không đổi -> giữ cache
           remember(project)
           begin
             DraftStore.clear(draft_dir, project['project_id'])

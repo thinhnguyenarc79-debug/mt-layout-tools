@@ -162,8 +162,21 @@ module MTDesign
               here = []
               front = []
               back = []
+              nx = n[0]
+              ny = n[1]
+              nz = n[2]
+              eps = EPS
               list.each do |pl|
-                case HiddenFill.side(pl, n, d)
+                # phía của mảnh so với mặt phẳng (viết thẳng, không gọi hàm – vòng lặp nóng nhất khi dựng cây)
+                f = b = false
+                pl[0].each do |p|
+                  v = nx * p[0] + ny * p[1] + nz * p[2] - d
+                  if v > eps then f = true
+                  elsif v < -eps then b = true
+                  end
+                end
+                sd = f ? (b ? 2 : 1) : (b ? -1 : 0)
+                case sd
                 when 0 then here << pl
                 when 1 then front << pl
                 when -1 then back << pl
@@ -194,14 +207,22 @@ module MTDesign
               sample = step == 1 ? list : (0...len).step(step).map { |k| list[k] }
               best = nil
               best_score = nil
+              eps = EPS
               cand.each do |c|
-                n = c[2]
+                nx, ny, nz = c[2]
                 d = c[3]
                 splits = 0
                 bal = 0
                 worse = false
                 sample.each do |pl|
-                  case HiddenFill.side(pl, n, d)
+                  f = b = false
+                  pl[0].each do |p|
+                    v = nx * p[0] + ny * p[1] + nz * p[2] - d
+                    if v > eps then f = true
+                    elsif v < -eps then b = true
+                    end
+                  end
+                  case f ? (b ? 2 : 1) : (b ? -1 : 0)
                   when 2
                     splits += 1
                     if best_score && splits * 8 > best_score[0]

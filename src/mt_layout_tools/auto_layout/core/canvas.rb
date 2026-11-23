@@ -92,6 +92,64 @@ module MTDesign
           end
         end
 
+        # Mảng tô của 1 hình viết theo TOẠ ĐỘ CỤC BỘ của hình (mm thật) bên trong 1 phép biến đổi (vị trí + tỉ lệ):
+        # chuỗi kết quả không phụ thuộc chỗ đặt hình trên giấy -> lưu cache theo hình, lần dựng sau (dời hình, chuyển tờ,
+        # sửa DIM/chữ...) chỉ ghép lại, không định dạng lại hàng chục nghìn đa giác (v2.17).
+        # items: [[điểm cục bộ[], màu], ...] theo thứ tự vẽ. Trả về [đầu, thân, đuôi] để ghép với vị trí mới.
+        def self.local_fills(fmt, items, s)
+          sw = 0.08 * s # viền 0.08 mm giấy, đổi ra đơn vị cục bộ
+          body = []
+          run = []
+          col = nil
+          flush = lambda do
+            next if run.empty?
+
+            run.each_slice(1500) do |chunk|
+              if fmt == :svg
+                d = chunk.map { |pts| 'M' + ccw(pts).map { |p| "#{f2(p[0])} #{f2(p[1])}" }.join('L') + 'Z' }.join
+                body << %(<path d="#{d}" fill="#{col}" stroke="#{col}" stroke-width="#{f2(sw)}"/>)
+              else
+                c = Pdf.rgb(col).map { |x| x.round(4) }.join(' ')
+                path = chunk.map { |pts| q = ccw(pts); "#{f2(q[0][0])} #{f2(q[0][1])} m " + q[1..-1].map { |p| "#{f2(p[0])} #{f2(p[1])} l" }.join(' ') + ' h' }.join(' ')
+                body << "#{c} rg #{c} RG #{f2(sw)} w #{path} B"
+              end
+            end
+            run = []
+          end
+          items.each do |pts, c|
+            flush.call if c != col
+            col = c
+            run << pts
+          end
+          flush.call
+          body.join(fmt == :svg ? '' : "\n")
+        end
+
+        # Số 2 chữ số thập phân, nhanh (mm thật: 0.01 mm – nhỏ hơn mọi sai số in ấn ở mọi tỉ lệ bản vẽ).
+        def self.f2(x)
+          i = (x * 100).round
+          neg = i.negative?
+          i = -i if neg
+          q, r = i.divmod(100)
+          t = if r.zero? then q.to_s
+              elsif (r % 10).zero? then "#{q}.#{r / 10}"
+              else "#{q}.#{r < 10 ? '0' : ''}#{r}"
+              end
+          neg && i.positive? ? "-#{t}" : t
+        end
+
+        # Đặt mảng tô cục bộ đã cache vào đúng chỗ: (ox, oy) góc hình trên giấy, s tỉ lệ (1:s).
+        def placed_fills(frag, ox, oy, s)
+          return if frag.nil? || frag.empty?
+
+          if @fmt == :svg
+            @out << %(<g transform="translate(#{n(ox)} #{n(oy)}) scale(#{Pdf.number(1.0 / s)})">#{frag}</g>)
+          else
+            a = K / s
+            @out << "q #{Pdf.number(a)} 0 0 #{Pdf.number(-a)} #{Pdf.number(ox * K)} #{Pdf.number((@ph - oy) * K)} cm\n#{frag}\nQ"
+          end
+        end
+
         # Đa giác theo chiều quay thống nhất (diện tích có dấu >= 0 trong hệ giấy).
         def self.ccw(pts)
           a = 0.0

@@ -768,7 +768,13 @@ module MTDesign
           mode = v[:key] == 'iso' ? page['iso_mode'].to_s : 'material'
           return if mode == 'none'
 
-          cv.fill_runs(v[:fills].map { |tri, color, gray| [tri.map(&tf), mode == 'mono' && gray ? gray : color] })
+          # v2.17: chuỗi mảng tô cục bộ lưu cache theo hình (hình đã dựng nằm trong cache giữa các lần dựng)
+          ox, oy = tf.call([0.0, 0.0])
+          s = 1.0 / (tf.call([1.0, 0.0])[0] - ox)
+          cache = (v[:fill_frag] ||= {})
+          key = [cv.fmt, mode, s.round(6)]
+          cache[key] ||= Canvas.local_fills(cv.fmt, v[:fills].map { |tri, color, gray| [tri, mode == 'mono' && gray ? gray : color] }, s)
+          cv.placed_fills(cache[key], ox, oy, s)
         end
 
         # Nhóm SVG class "secmark" để kéo đường cắt trực tiếp trên giấy.

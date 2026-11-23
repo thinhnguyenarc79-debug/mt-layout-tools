@@ -32,7 +32,23 @@ module MTDesign
         def tasks
           [Job.once('kiểm tra') { |job| check(job) },
            capture_task([]),
+           fill_tree_task,
            Job.once('lập danh sách hình') { |job| plan(job) }]
+        end
+
+        # Cây BSP tô mặt dùng chung cho mọi hình (mặt đứng, bên, bằng, trục đo, mặt cắt) – tách thành bước riêng
+        # (v2.17) để báo cáo đúng: trước đây nằm trong "hình MẶT ĐỨNG" (hình đầu tiên cần tô) nên mặt đứng trông
+        # rất chậm. Cây nằm trong capture đã cache -> chỉ dựng 1 lần cho tới khi model đổi.
+        def fill_tree_task
+          Job::Task.new('cây che khuất mặt tô (dùng chung)') do |job|
+            cap = @fatal ? nil : cap_for(:all)
+            if cap && @pg.fetch('fill', true) && !cap.triangles.empty? && cap.triangles.length <= Geometry::MAX_FILL
+              job.progress("#{label}: xử lý che khuất mặt tô (#{cap.triangles.length} tam giác)", 12)
+              cap.fill_tree.step(job)
+            else
+              true
+            end
+          end
         end
 
         def cache

@@ -2055,6 +2055,10 @@
            ' · ComponentInstances ' + (m.components || 0) + ' · Definitions ' + m.definitions + ' · lồng ' + (m.depth || 0) + ' cấp · đếm ' + m.count_ms + ' ms');
     L.push('Thời gian dựng (đọc lại từ đầu): tổng ' + rep.wall_ms + ' ms (CPU ' + rep.cpu_ms + ' ms)');
     Object.keys(rep.timings_ms).forEach(function (k) { if (rep.timings_ms[k] >= 1) L.push('  ' + pad(k, 34) + rep.timings_ms[k] + ' ms'); });
+    if (rep.warm_ms != null) {
+      L.push('Dựng lại khi model KHÔNG đổi (dùng cache – như sửa DIM/chữ, dời hình, chuyển tờ, mở lại cửa sổ): ' + rep.warm_ms + ' ms');
+      Object.keys(rep.warm_timings_ms || {}).forEach(function (k) { L.push('  ' + pad(k, 34) + rep.warm_timings_ms[k] + ' ms'); });
+    }
     L.push('Hình chiếu (nét thấy / chuỗi nét / mảng tô / nét cắt / mức khử nét):');
     rep.views.forEach(function (v) { L.push('  ' + pad(v.name, 26) + pad(v.lines, 8) + pad(v.chains, 7) + pad(v.fills, 8) + pad(v.cut, 6) + 'mức ' + v.level); });
     L.push('Tờ (SVG KB / số <path> / tổng phần tử / gói gửi giao diện KB / hình học bắt điểm KB – chỉ gửi khi cần):');
