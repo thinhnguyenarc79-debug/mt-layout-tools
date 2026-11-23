@@ -115,18 +115,34 @@ module MTDesign
         end
 
         # Tạo hình chi tiết từ hình nguồn. Toạ độ hình chi tiết: gốc tại góc trên-trái vùng khoanh.
+        # hộp bao đa giác giao vùng chữ nhật [x0, y0, x1, y1]
+        def overlaps?(pts, rect)
+          x0, y0, x1, y1 = rect
+          xs = pts.map { |p| p[0] }
+          ys = pts.map { |p| p[1] }
+          xs.max >= x0 && xs.min <= x1 && ys.max >= y0 && ys.min <= y1
+        end
+
         def build(src, det)
           x0, y0, x1, y1 = det['rect']
           shift = ->(p) { [p[0] - x0, p[1] - y0] }
           shape = (det['marker'] || {})['shape'] || 'rect'
           clip = shape == 'rect' ? ->(a, b) { clip_seg(a, b, det['rect']) } : ->(a, b) { clip_ellipse(a, b, det['rect']) }
           lines = src[:lines].filter_map { |a, b| (s = clip.call(a, b)) && s.map(&shift) }
-          raise ArgumentError, "#{label(det)}: vùng khoanh không chứa nét nào." if lines.empty? && !src[:cut]
+          fills_in = Array(src[:fills]).count { |tri, _| overlaps?(tri, det['rect']) }
+          cut_in = src[:cut] ? Array(src[:cut][:segs]).count { |a, b| clip_seg(a, b, det['rect']) } : 0
+          stats = { 'src' => src[:key].to_s, 'rect' => det['rect'], 'lines_src' => Array(src[:lines]).length,
+                    'lines_in' => lines.length, 'fills_src' => Array(src[:fills]).length, 'fills_in' => fills_in, 'cut_in' => cut_in }
+          # vùng không có nét, mảng tô, nét cắt nào -> báo rõ (không tạo chi tiết trống)
+          if lines.empty? && fills_in.zero? && cut_in.zero?
+            raise ArgumentError, "#{label(det)}: vùng khoanh trên #{src[:name]} không chứa hình học nào " \
+                                 "(#{stats['lines_src']} nét, #{stats['fills_src']} mảng tô của hình nguồn đều nằm ngoài vùng) – khoanh lại vùng."
+          end
 
           {
             key: key(det), name: label(det), w: x1 - x0, h: y1 - y0, dims: true, level: src[:level],
             lines: lines, fills: [], notes: [], stats: {}, fixed_scale: det['scale'],
-            detail: { src: src, rect: det['rect'], shape: shape, n: det['n'], fill: det['fill'] },
+            detail: { src: src, rect: det['rect'], shape: shape, n: det['n'], fill: det['fill'], stats: stats },
             border: shape == 'rect' ? nil : ellipse_pts(x1 - x0, y1 - y0)
           }
         end

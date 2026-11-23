@@ -1410,8 +1410,30 @@
     vprops('det:' + n, true).sheet = S.sheet || 0;
     S.pendingPlace = 'det:' + n;
     renderDetails(); changed(); requestRender(true);
-    msg('Đã tạo CHI TIẾT ' + n + (dtype === 'section' ? ' – CẤU TẠO (mặt cắt thật qua hình học 3D, đường cắt giữa vùng; chuột phải để đổi hướng/vị trí cắt)' : ' – phóng to 2D') +
-        ' (TL 1:' + scale + ') trên tờ ' + sheetCode(S.sheet || 0) + '.', 'ok');
+    // chỉ báo thành công sau khi Ruby trích & vẽ xong và có hình học thật (detailVerify trong showSvg)
+    S.detCheck = { key: 'det:' + n, n: n, type: dtype, scale: scale, sheet: S.sheet || 0 };
+    msg('Đang trích CHI TIẾT ' + n + ' từ ' + viewName(key) + '…', '');
+  }
+  // Kiểm tra chi tiết vừa tạo: có khung trên tờ + có hình học đã vẽ (số nét / mảng tô / nét cắt > 0).
+  function detailVerify(info) {
+    var c = S.detCheck; if (!c) return; S.detCheck = null;
+    var st = info.detail_stats && info.detail_stats[c.key], fr = info.frames && info.frames[c.key];
+    var lab = 'CHI TIẾT ' + c.n, where = ' (TL 1:' + c.scale + ') trên tờ ' + sheetCode(c.sheet) + '.';
+    if (c.type === 'section') {
+      if (fr) msg('Đã tạo ' + lab + ' – CẤU TẠO (mặt cắt thật qua hình học 3D; chuột phải để đổi hướng/vị trí cắt)' + where, 'ok');
+      else msg(lab + ': chưa dựng được mặt cắt cấu tạo – xem ghi chú trên tờ.', 'err');
+      return;
+    }
+    if (st && st.elements > 0) {
+      msg('Đã tạo ' + lab + ' – phóng to 2D: ' + st.polylines + ' nét, ' + st.fills + ' mảng tô' + (st.cut_in ? ', ' + st.cut_in + ' nét cắt' : '') +
+          ' trong vùng trích của ' + viewName(st.src) + where, 'ok');
+    } else if (st) {
+      msg(lab + ': vùng trích KHÔNG có hình học nào được vẽ (nguồn ' + viewName(st.src) + ') – khoanh lại vùng.', 'err');
+    } else {
+      var note = (info.note || '').split(' | ').filter(function (l) { return l.indexOf(lab + ':') >= 0 || l.indexOf('CHI TIẾT ' + c.n + ' ') >= 0; })[0];
+      if (fr) return; // chi tiết đã có trên tờ khác
+      msg(note || (lab + ': chưa trích được hình học – xem ghi chú trên tờ.'), 'err');
+    }
   }
   var place = null; // trạng thái đặt leader (đã có điểm mũi tên)
   function ghost(cls, css) {
@@ -2089,6 +2111,7 @@
   }
   function showSvg(svg, info) {
     S.info = info; S.mdIdx = {};
+    setTimeout(function () { detailVerify(info); }, 0);
     if (S.openedPage !== S.cur) { S.snapData = {}; S.snapReq = {}; S.openedPage = S.cur; } // đổi trang: bỏ dữ liệu bắt điểm cũ
     if (S.tool === 'mdim' || S.tool === 'edit' || (S.selDims && S.selDims.length)) setTimeout(snapPrefetch, 0);
     mdSync(info); dimSync(info);

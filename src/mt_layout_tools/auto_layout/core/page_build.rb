@@ -345,12 +345,19 @@ module MTDesign
               next
             end
             begin
+              t0 = Time.now
               dv = DetailEngine.build(src, det)
               dv[:dim_mode] = :interior
               @views << dv
+              st = dv[:detail][:stats]
+              @env.log("CHI TIẾT #{det['n']} (#{DetailEngine.key(det)}): nguồn=#{det['src']} model pid=#{@pg['pid']} " \
+                       "vùng=#{det['rect'].inspect} TL 1:#{det['scale']} kiểu=#{det['type'] || 'enlarge'} – nét nguồn #{st['lines_src']} -> " \
+                       "trong vùng #{st['lines_in']}, mảng tô #{st['fills_src']} -> #{st['fills_in']}, nét cắt #{st['cut_in']}; " \
+                       "#{((Time.now - t0) * 1000).round} ms")
             rescue StandardError => e
               @failed << DetailEngine.key(det)
               @notes << e.message
+              @env.log("CHI TIẾT #{det['n']}: LỖI – #{e.message}")
             end
           end
           job.insert_next(construction_tasks(cons) + [Job.once('bản sao') { |jj| copies; jj.insert_next(chain_tasks + [finish_task]) }])

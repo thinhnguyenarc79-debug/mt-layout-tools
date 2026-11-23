@@ -229,7 +229,20 @@ module MTDesign
             fr = ctx[:info]['frames'][v[:key]] = draw_view(cv, v, ctx[:scale], x, base, page)
             draw_manual_dims(cv, v, fr, page, ctx[:info])
             collect_dims(v, ctx[:info])
+            collect_detail(v, ctx[:info])
           end
+        end
+
+        # Chẩn đoán chi tiết phóng to: nguồn, vùng, số nét/mảng tô lấy được và đã vẽ – gửi giao diện + ghi log.
+        def collect_detail(v, info)
+          return unless v[:detail] && v[:detail_drawn]
+
+          st = (v[:detail][:stats] || {}).merge(v[:detail_drawn])
+          st['elements'] = st['fills'].to_i + st['polylines'].to_i + st['cut_in'].to_i
+          (info['detail_stats'] ||= {})[v[:key].to_s] = st
+          return unless st['elements'].zero?
+
+          add_note(info, "#{v[:name]}: KHÔNG vẽ được hình học nào trong vùng trích (nguồn #{st['src']}, vùng #{st['rect'].inspect}).")
         end
 
         # Danh sách DIM của hình gửi giao diện (DIM tự động từng đoạn + DIM thủ công, cùng khuôn dữ liệu) + cảnh báo
@@ -530,12 +543,16 @@ module MTDesign
           vw, vh = v[:w] / s, v[:h] / s
           shape = v[:detail][:shape] || 'rect'
           fill = v[:detail][:fill].nil? ? page['fill'] : v[:detail][:fill]
+          rect = v[:detail][:rect]
+          drawn = {}
           body = lambda do
             # chỉ phần hình học trong vùng trích: mặt tô, nét (đã cắt sẵn), nét cắt + hatch của mặt cắt nguồn
-            cv.fill_runs(src[:fills].map { |tri, color| [tri.map(&tf), color] }) if fill
-            chain(v[:lines].map { |a, b| [[ox + a[0] / s, oy + a[1] / s], [ox + b[0] / s, oy + b[1] / s]] })
-              .each { |pl| cv.polyline(pl, 0.3, INK) }
+            fl = fill ? Array(src[:fills]).select { |tri, _| DetailEngine.overlaps?(tri, rect) } : []
+            cv.fill_runs(fl.map { |tri, color| [tri.map(&tf), color] }) unless fl.empty?
+            pls = chain(v[:lines].map { |a, b| [[ox + a[0] / s, oy + a[1] / s], [ox + b[0] / s, oy + b[1] / s]] })
+            pls.each { |pl| cv.polyline(pl, 0.3, INK) }
             draw_cut(cv, src, tf, page['pens'])
+            drawn = { 'fills' => fl.length, 'polylines' => pls.length }
           end
           if shape == 'rect'
             cv.clip(ox, oy, vw, vh, &body)
@@ -543,6 +560,7 @@ module MTDesign
           else
             cv.clip_ellipse(ox, oy, vw, vh, &body) # tròn/elip: không lộ phần ngoài đường bao
           end
+          v[:detail_drawn] = drawn.merge('scale' => s, 'at' => [ox.round(2), oy.round(2)])
         end
 
         # Ký hiệu vùng khoanh chi tiết trên hình nguồn: khung nét đứt + số chi tiết.

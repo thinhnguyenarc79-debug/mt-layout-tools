@@ -381,6 +381,10 @@ module MTDesign
             info['layout'] = Sheet.layout_of(outs)
             info['ms'] = ((Time.now - t0) * 1000).round
             @snap_data = { page['id'] => info.delete('snap_data') || {} } # hình học bắt điểm: chỉ gửi khi cần
+            (info['detail_stats'] || {}).each do |k, st|
+              log("VẼ #{k} trên tờ #{want.clamp(0, outs.length - 1) + 1}: #{st['elements']} phần tử (#{st['polylines']} nét, #{st['fills']} mảng tô, " \
+                  "#{st['cut_in']} nét cắt) TL 1:#{st['scale']} tại #{st['at'].inspect}#{st['elements'].to_i.zero? ? ' – CẢNH BÁO: KHÔNG CÓ HÌNH HỌC' : ''}")
+            end
             push(d, 'page', { 'page_id' => page['id'], 'svg' => svg, 'info' => info })
           end)
         end

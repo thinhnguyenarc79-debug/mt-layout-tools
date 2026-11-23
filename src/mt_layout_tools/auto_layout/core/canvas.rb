@@ -245,13 +245,22 @@ module MTDesign
         end
 
         # ---- nhóm & vùng cắt ----
+        # id clipPath DUY NHẤT trong cả tờ (v2.17.1). Lỗi cũ: id = "c" + độ dài bộ đệm; mỗi hình (kể cả từng chi tiết)
+        # được vẽ trên 1 canvas con rồi ghép lại nên các chi tiết trùng id ("c1"): trình duyệt dùng clipPath đầu tiên
+        # (vùng của CHI TIẾT 1) cho mọi chi tiết -> CHI TIẾT 2, 3... bị cắt mất toàn bộ hình học, chỉ còn khung + DIM.
+        @clip_seq = 0
+        def self.clip_id
+          @clip_seq = (@clip_seq || 0) + 1
+          "mtclip#{@clip_seq.to_s(36)}"
+        end
+
         def clip(x, y, w, h)
           if @fmt == :pdf
             @out << "q #{xy([x, y + h])} #{Pdf.number(w * K)} #{Pdf.number(h * K)} re W n"
             yield
             @out << 'Q'
           else
-            id = "c#{@out.length}"
+            id = Canvas.clip_id
             @out << %(<clipPath id="#{id}"><rect x="#{n(x)}" y="#{n(y)}" width="#{n(w)}" height="#{n(h)}"/></clipPath><g clip-path="url(##{id})">)
             yield
             @out << '</g>'
@@ -274,7 +283,7 @@ module MTDesign
             yield
             @out << 'Q'
           else
-            id = "c#{@out.length}"
+            id = Canvas.clip_id
             @out << %(<clipPath id="#{id}"><ellipse cx="#{n(cx)}" cy="#{n(cy)}" rx="#{n(rx)}" ry="#{n(ry)}"/></clipPath><g clip-path="url(##{id})">)
             yield
             @out << '</g>'
