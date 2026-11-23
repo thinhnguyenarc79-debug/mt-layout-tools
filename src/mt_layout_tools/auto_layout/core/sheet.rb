@@ -325,7 +325,8 @@ module MTDesign
             end
           end
           # bảng chú thích vật liệu (chú giải 2D, chỉnh được – v2.18); không che hình: báo nếu chồng
-          lg = info['legend'] = Legend.draw(cv, ctx[:mats] || ctx[:legend], page['legend'], area, info['boxes'] || {}, page['__sheet'].to_i)
+          lcfg = (page['legend'] || {}).merge('hidden_all' => page['legend_hidden'] == true)
+          lg = info['legend'] = Legend.draw(cv, ctx[:mats] || ctx[:legend], lcfg, area, info['boxes'] || {}, page['__sheet'].to_i)
           unless Array(lg['covers']).empty?
             names = lg['covers'].map { |k| (ctx[:placements].find { |pl| pl[0][:key].to_s == k.to_s } || [{ name: k }])[0][:name] }
             add_note(info, "BẢNG VẬT LIỆU CHE #{names.join(', ')} – kéo bảng ra chỗ trống (chế độ ✎ DIM & Chữ) hoặc ẩn bảng.")

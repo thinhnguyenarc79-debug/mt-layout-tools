@@ -133,4 +133,21 @@ class TestLegendCaption < Minitest::Test
     assert_equal 4, pg['legend']['cols']
     assert_equal 3.0, pg['captions']['front']['sdx']
   end
+
+  # v2.18.1: ẩn hàng loạt – mọi tờ của trang; trang mới theo mặc định dự án; triển khai lại giữ trạng thái
+  def test_an_hang_loat
+    pb = LG.run('legend_hidden' => true)
+    assert_nil LG.legend_g(LG.svg(pb))
+    assert LG.info(pb)['legend']['hidden_all']
+    pb.outputs.each { |s, _| assert_nil LG.legend_g(s), 'ẩn trên mọi tờ' }
+    project = AL::ProjectStore.default_project
+    project['defaults']['legend_hidden'] = true
+    project = AL::ProjectStore.clean(JSON.parse(JSON.generate(project)))
+    assert project['defaults']['legend_hidden'], 'mặc định dự án được lưu'
+    AL::ProjectStore.add_pages(project, [7], ->(_pid) { { 'name' => 'Tủ mới', 'root' => true } }, false)
+    assert project['pages'][0]['legend_hidden'], 'trang thêm sau cũng ẩn bảng'
+    project['defaults']['legend_hidden'] = false
+    AL::ProjectStore.add_pages(project, [7], ->(_pid) { { 'name' => 'Tủ mới', 'root' => true } }, true)
+    assert project['pages'][0]['legend_hidden'], 'triển khai lại giữ trạng thái ẩn của trang'
+  end
 end

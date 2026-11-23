@@ -1,7 +1,7 @@
 {
-  "version": "2.18.0",
+  "version": "2.18.1",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "05be6e3ed421e60900c593ccdecbbeda35ed7343480b7c7a1c50bd88b16373d1",
-  "notes": "v2.18.0: chỉnh sửa bảng chú thích vật liệu; tên hình & dòng tỷ lệ kéo độc lập, không chặn thêm DIM"
+  "sha256": "a42887917e8413db41c8f4efe3b027361092d1f7c4ebc336691342b8c7917d5f",
+  "notes": "v2.18.1: ẩn/hiện bảng chú thích vật liệu hàng loạt (mọi tờ của trang / toàn bộ dự án)"
 }

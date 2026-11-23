@@ -117,9 +117,9 @@ module MTDesign
           cfg ||= {}
           all = rows(mats, cfg)
           vis = all.reject { |r| r['hidden'] }
-          hidden = Array(cfg['hidden_sheets']).include?(sheet.to_i)
+          hidden = cfg['hidden_all'] == true || Array(cfg['hidden_sheets']).include?(sheet.to_i)
           w, h = size(cfg, vis.length)
-          info = { 'rows' => all, 'hidden' => hidden, 'custom' => !cfg['x'].nil?, 'locked' => cfg['locked'] == true }
+          info = { 'rows' => all, 'hidden' => hidden, 'hidden_all' => cfg['hidden_all'] == true, 'custom' => !cfg['x'].nil?, 'locked' => cfg['locked'] == true }
           return info if vis.empty? || hidden
 
           x, y, blocked = place(cfg, w, h, area, boxes)

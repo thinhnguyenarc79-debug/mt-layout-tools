@@ -2118,8 +2118,32 @@
   function capFreeze(k, c) {
     if (c.dx == null && c.dy == null) { c.dx = 0; c.dy = (S.info && S.info.caption_shift && S.info.caption_shift[k]) || 0; }
   }
-  function legendHiddenHere() { return (legendCfg().hidden_sheets || []).indexOf(S.sheet || 0) >= 0; }
+  function legendHiddenHere() { var p = page(); return !!(p && p.legend_hidden) || (legendCfg().hidden_sheets || []).indexOf(S.sheet || 0) >= 0; }
+  // ẨN / HIỆN HÀNG LOẠT: scope 'page' = mọi tờ của trang (model) đang mở; 'all' = mọi trang của dự án
+  // (+ mặc định cho trang thêm sau). Chỉ là chú giải 2D – không đụng vật liệu model.
+  function legendBulk(on, scope) {
+    var pages = scope === 'all' ? (S.project.pages || []) : [page()].filter(Boolean);
+    if (!pages.length) return;
+    snapshot();
+    pages.forEach(function (p) {
+      p.legend_hidden = !on;
+      if (p.legend) { delete p.legend.hidden_sheets; }
+    });
+    if (scope === 'all') { S.project.defaults = S.project.defaults || {}; S.project.defaults.legend_hidden = !on; }
+    changed(); requestRender(true); renderLegendPanel();
+    var nSheets = pages.reduce(function (n, p) { return n + (p.sheet_count || 1); }, 0);
+    msg((on ? 'Đã HIỆN' : 'Đã ẨN') + ' bảng chú thích vật liệu trên ' + nSheets + ' tờ (' + pages.length + ' trang)' +
+        (scope === 'all' ? '; trang thêm sau cũng ' + (on ? 'hiện' : 'ẩn') + ' bảng' : '') + '. Vật liệu trong model không đổi.', 'ok');
+  }
   function legendShow(on, all) {
+    var pg0 = page();
+    if (on && pg0 && pg0.legend_hidden) { // đang ẩn mọi tờ -> chỉ hiện lại tờ này, các tờ khác vẫn ẩn
+      legendChange(function (c) {
+        var hs = []; for (var i = 0; i < (pg0.sheet_count || 1); i++) if (i !== (S.sheet || 0)) hs.push(i);
+        c.hidden_sheets = hs; pg0.legend_hidden = false;
+      }, 'Đã hiện bảng vật liệu trên tờ này (các tờ khác của trang vẫn ẩn).');
+      return;
+    }
     legendChange(function (c) {
       var hs = (c.hidden_sheets || []).slice(), cur = S.sheet || 0;
       if (all) { hs = []; if (!on) for (var i = 0; i < Math.max(1, ((S.info && S.info.layout_sheets) || 1)); i++) hs.push(i); if (!on && hs.indexOf(cur) < 0) hs.push(cur); }
@@ -2130,7 +2154,8 @@
   function legendCtx(x, y) {
     var m = $('ctxMenu'), c = legendCfg(), h = [], it = function (act, label, on) { h.push('<div class="it' + (on ? ' on' : '') + '" data-act="' + act + '">' + esc(label) + '</div>'); };
     h.push('<div class="hd">Chú thích vật liệu<small>' + (c.locked ? 'đã khóa vị trí' : (c.x != null ? 'vị trí tự đặt' : 'vị trí tự động')) + '</small></div>');
-    it('hide', 'Ẩn bảng vật liệu (tờ này)'); it('edit', 'Chỉnh sửa bảng vật liệu…'); it('move', 'Di chuyển (nhấp vị trí mới)');
+    it('hide', 'Ẩn bảng vật liệu (tờ này)'); it('hidepage', 'Ẩn trên MỌI tờ của trang này'); it('hideall', 'Ẩn trên TẤT CẢ trang của dự án');
+    it('edit', 'Chỉnh sửa bảng vật liệu…'); it('move', 'Di chuyển (nhấp vị trí mới)');
     h.push('<div class="lb">Số cột</div><div class="grid">' + [1, 2, 3, 4].map(function (n) { return '<span data-act="cols:' + n + '" class="' + ((c.cols || 1) === n ? 'on' : '') + '">' + n + '</span>'; }).join('') + '</div>');
     it('lock', c.locked ? 'Mở khóa vị trí' : 'Khóa vị trí'); it('reset', 'Khôi phục vị trí mặc định');
     m.innerHTML = h.join(''); m.hidden = false;
@@ -2139,6 +2164,8 @@
     m.onclick = function (e) {
       var a = e.target.closest('[data-act]'); if (!a) return; var act = a.dataset.act; hideCtx();
       if (act === 'hide') legendShow(false, false);
+      else if (act === 'hidepage') legendBulk(false, 'page');
+      else if (act === 'hideall') legendBulk(false, 'all');
       else if (act === 'edit') legendDialog();
       else if (act === 'move') { if (c.locked) { msg('Bảng đang khóa vị trí.', 'warn'); return; } S.pickText = { kind: 'legend' }; msg('Nhấp vị trí mới (góc trên-trái) cho bảng vật liệu. ESC để hủy.', ''); }
       else if (act.indexOf('cols:') === 0) legendChange(function (o) { o.cols = +act.slice(5) > 1 ? +act.slice(5) : null; });
@@ -2212,6 +2239,10 @@
     bind();
   }
   $('lgShowHere').addEventListener('change', function () { legendShow(this.checked, false); });
+  $('lgHidePage').onclick = function () { legendBulk(false, 'page'); };
+  $('lgShowPage').onclick = function () { legendBulk(true, 'page'); };
+  $('lgHideAll').onclick = function () { legendBulk(false, 'all'); };
+  $('lgShowAll').onclick = function () { legendBulk(true, 'all'); };
   $('lgEditBtn').onclick = function () { legendDialog(); };
   $('lgResetBtn').onclick = function () { legendChange(function (o) { delete o.x; delete o.y; delete o.locked; }, 'Bảng vật liệu về vị trí tự động (né các hình chiếu).'); };
   function renderLegendPanel() {
@@ -2219,6 +2250,9 @@
     var lg = S.info && S.info.legend, c = legendCfg();
     var n = lg && lg.rows ? lg.rows.length : 0, hid = lg && lg.rows ? lg.rows.filter(function (r) { return r.hidden; }).length : 0;
     $('lgShowHere').checked = !legendHiddenHere();
+    var pp = page(), hidPages = (S.project.pages || []).filter(function (x) { return x.legend_hidden; }).length;
+    $('lgBulkInfo').textContent = (pp && pp.legend_hidden ? 'Trang này: đang ẩn trên mọi tờ. ' : '') +
+      (hidPages ? hidPages + '/' + (S.project.pages || []).length + ' trang đang ẩn bảng trên mọi tờ.' : '');
     $('lgInfo').textContent = n ? (n + ' vật liệu' + (hid ? ' (' + hid + ' dòng ẩn)' : '') + ' · ' + (c.x != null ? 'vị trí tự đặt' : 'tự né hình chiếu') + (c.locked ? ' · đã khóa' : '')) : 'Chưa có vật liệu.';
   }
   // ---------------- trang & dựng ----------------
