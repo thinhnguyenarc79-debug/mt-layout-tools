@@ -107,7 +107,8 @@ module MTDesign
           out['text'] = t unless t.empty?
           st = str(c['scale_text'], 60)
           out['scale_text'] = st unless st.empty?
-          %w[dx dy].each { |k| out[k] = num(c[k], -400, 400) unless c[k].nil? || num(c[k], -400, 400).nil? }
+          %w[dx dy sdx sdy].each { |k| out[k] = num(c[k], -400, 400) unless c[k].nil? || num(c[k], -400, 400).nil? }
+          out['scale_fixed'] = true if c['scale_fixed'] == true && out['scale_text'] # chữ tỉ lệ tự nhập (cố ý, có cảnh báo)
           out['size'] = num(c['size'], 1.5, 15.0) unless c['size'].nil? || num(c['size'], 1.5, 15.0).nil?
           out['color'] = c['color'].to_s if c['color'].to_s =~ /\A#[0-9A-Fa-f]{6}\z/
           out['align'] = c['align'].to_s if ALIGNS.include?(c['align'].to_s) && c['align'].to_s != 'center'
@@ -129,11 +130,14 @@ module MTDesign
 
         # Dòng tỉ lệ luôn bám tỉ lệ THẬT: "{TL}" -> "1:20". Nếu người dùng gõ cứng một tỉ lệ khác tỉ lệ thật
         # (vd. "TL 1:50" trong khi hình in 1:20) thì thay bằng tỉ lệ thật – không bao giờ in sai tỉ lệ bản vẽ.
-        def scale_line(custom, s)
+        # fixed: người dùng CỐ Ý ghi chữ tỉ lệ tự nhập (text override) – giữ nguyên chữ, giao diện + ghi chú tờ đánh dấu rõ.
+        def scale_line(custom, s, fixed = false)
           real = "1:#{s}"
           return "TL #{real}" if custom.to_s.strip.empty?
 
           t = custom.to_s.gsub('{TL}', real)
+          return t if fixed
+
           t.gsub(/1\s*:\s*\d+(?:[.,]\d+)?/) { real }
         end
       end

@@ -119,6 +119,7 @@ module MTDesign
             # chỉnh sửa DIM tự động từng đoạn + chữ tên hình (v2.15) – lưu riêng, áp lại sau mỗi lần dựng
             'dim_over' => DimEdit.clean(pg['dim_over']),
             'captions' => DimEdit.clean_captions(pg['captions']),
+            'legend' => Legend.clean(pg['legend']), # bảng chú thích vật liệu (chỉ chú giải 2D)
             'offsets' => offs.each_with_object({}) do |(k, v), h|
               next unless (VIEW_KEYS.include?(k.to_s) || k.to_s =~ /\A(sec:[A-Z]|det:\d{1,2}|cp:\d{1,3})\z/) && v.is_a?(Array) && v.length == 2
 
@@ -153,7 +154,7 @@ module MTDesign
               # và phân loại bộ phận gán tay (roles) – không ghi đè dữ liệu người dùng khi triển khai lại
               base = base.merge('view_props' => keep, 'door_symbols' => old['door_symbols'] || {}, 'roles' => old['roles'] || {},
                                 'manual_dims' => old['manual_dims'] || {}, 'dim_over' => old['dim_over'] || {},
-                                'captions' => old['captions'] || {}, 'dimoff' => old['dimoff'] || {}, 'dimtext' => old['dimtext'] || {},
+                                'captions' => old['captions'] || {}, 'legend' => old['legend'] || {}, 'dimoff' => old['dimoff'] || {}, 'dimtext' => old['dimtext'] || {},
                                 'offsets' => (old['offsets'] || {}).select { |k, _| keep[k] && keep[k]['position_locked'] })
               fresh = clean_page(base.merge('id' => old['id'], 'sheet_no' => old['sheet_no']))
               project['pages'][project['pages'].index(old)] = fresh

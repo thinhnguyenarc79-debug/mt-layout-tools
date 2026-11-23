@@ -191,7 +191,7 @@ module MTDesign
           ah = area[3] - area[1] - legend_h
           info = { 'note' => nil, 'boxes' => {}, 'offsets' => {}, 'frames' => {}, 'area' => area.map { |n| n.round(2) },
                    'legend_h' => (mats.first(14).empty? ? 0 : mats.first(14).length * 4.2 + 2) }
-          ctx = { frame: frame, tb_x: tb_x, area: area, legend: legend, info: info, placements: [], empty: views.empty? }
+          ctx = { frame: frame, tb_x: tb_x, area: area, legend: legend, mats: mats, info: info, placements: [], empty: views.empty? }
           if views.empty?
             info['scale'] = page['scale'].to_i.positive? ? page['scale'].to_i : 20
             info['note'] = 'Trang chưa có hình chiếu nào.'
@@ -228,7 +228,7 @@ module MTDesign
           cv.group('class' => 'view', 'data-key' => v[:key]) do
             fr = ctx[:info]['frames'][v[:key]] = draw_view(cv, v, ctx[:scale], x, base, page)
             draw_manual_dims(cv, v, fr, page, ctx[:info])
-            collect_dims(v, ctx[:info])
+            collect_dims(v, ctx[:info], page)
             collect_detail(v, ctx[:info])
           end
         end
@@ -247,7 +247,7 @@ module MTDesign
 
         # Danh sách DIM của hình gửi giao diện (DIM tự động từng đoạn + DIM thủ công, cùng khuôn dữ liệu) + cảnh báo
         # DIM chồng tên hình (chỉ báo, không tự dời gì).
-        def collect_dims(v, info)
+        def collect_dims(v, info, page = {})
           key = v[:key].to_s
           r = v[:dim_result] || {}
           auto = Array(r['segs'])
@@ -258,6 +258,14 @@ module MTDesign
             add_note(info, "#{v[:name]}: #{r['orphans'].length} DIM tự động đã chỉnh không còn khớp hình học mới (mốc đo đã đổi) – xem bảng DIM & CHỮ.")
           end
           (info['captions'] ||= {})[key] = v[:caption_box].map { |n| n.round(2) } if v[:caption_box]
+          (info['caption_parts'] ||= {})[key] = v[:caption_parts].transform_values { |b| b.map { |n| n.round(2) } } if v[:caption_parts]
+          (info['caption_shift'] ||= {})[key] = v[:caption_shift] if v[:caption_shift].to_f.positive?
+          cc = (page['captions'] || {})[key] || {}
+          sc = (info['frames'][key] || [])[2]
+          if cc['scale_fixed'] && sc && !DimEdit.scale_line(cc['scale_text'], sc.round, true).include?("1:#{sc.round}")
+            add_note(info, "#{v[:name]}: dòng tỉ lệ là CHỮ TỰ NHẬP (\"#{DimEdit.scale_line(cc['scale_text'], sc.round, true)}\"), " \
+                           "không theo tỉ lệ thật 1:#{sc.round}.")
+          end
           cb = v[:caption_box]
           return unless cb
 
@@ -316,7 +324,12 @@ module MTDesign
               frags.each { |f| cv.raw(f) }
             end
           end
-          draw_legend(cv, ctx[:legend], area)
+          # bảng chú thích vật liệu (chú giải 2D, chỉnh được – v2.18); không che hình: báo nếu chồng
+          lg = info['legend'] = Legend.draw(cv, ctx[:mats] || ctx[:legend], page['legend'], area, info['boxes'] || {}, page['__sheet'].to_i)
+          unless Array(lg['covers']).empty?
+            names = lg['covers'].map { |k| (ctx[:placements].find { |pl| pl[0][:key].to_s == k.to_s } || [{ name: k }])[0][:name] }
+            add_note(info, "BẢNG VẬT LIỆU CHE #{names.join(', ')} – kéo bảng ra chỗ trống (chế độ ✎ DIM & Chữ) hoặc ẩn bảng.")
+          end
           AnnotationEngine.draw(cv, page['notes'], Array(page['hidden_layers']))
           draw_frame(cv, frame, tb_x)
           draw_title_block(cv, tb, info['scale_label'] || info['scale'], frame, tb_x)
@@ -504,7 +517,8 @@ module MTDesign
             end
           end
           @obstacles = nil
-          v[:caption_box] = draw_caption(cv, v, s, ox + vw / 2, base + pad[3] + 6.5, (page['captions'] || {})[v[:key].to_s])
+          v[:caption_box] = draw_caption(cv, v, s, ox + vw / 2, base + pad[3] + 6.5, (page['captions'] || {})[v[:key].to_s],
+                                         dims_low(v, s, ox, oy, vh, page))
           cv.text('BẢN XEM TRƯỚC – CHƯA KHỬ ĐỦ NÉT KHUẤT', ox + vw / 2, base + 13.5, 2.2, 0, '#B3261E') if v[:level].to_i >= 3
           [ox, oy, s, v[:w], v[:h]].map { |n| n.round(4) }
         end
@@ -854,36 +868,63 @@ module MTDesign
           end
         end
 
+        # Mép dưới thấp nhất của DIM nằm DƯỚI hình (chuỗi tự động bị kéo xuống, DIM thủ công đặt phía dưới) –
+        # để tên hình mặc định nằm thấp hơn, không chồng DIM. nil nếu không có DIM nào dưới hình.
+        def dims_low(v, s, ox, oy, vh, page)
+          bottom = oy + vh
+          ys = []
+          Array((v[:dim_result] || {})['segs']).each do |d|
+            g = d['geo']
+            next if !g || d['hidden'] || d['deleted']
+
+            ys.concat([g['la'] && g['la'][1], g['lb'] && g['lb'][1], g['tbox'] && g['tbox'][3]].compact)
+          end
+          Array((page['manual_dims'] || {})[v[:key].to_s]).each do |d|
+            next if d['hidden'] || d['axis'] != 'h' || d['side'] != 'b'
+
+            ys << bottom + d['off'].to_f + 3.2
+          end
+          low = ys.select { |y| y > bottom + 0.5 }.max
+          low && low + 0.0
+        end
+
         # Tên hình + dòng tỉ lệ, có chỉnh sửa của người dùng (page['captions'][key]): tên hiển thị riêng (loại hình nội bộ
         # giữ nguyên), dòng tỉ lệ luôn theo tỉ lệ thật, dời/cỡ/màu/căn lề/đậm. Nhóm SVG "vcap" để chọn & sửa trên giấy.
         # Trả về hộp chữ [x0, y0, x1, y1] (mm giấy) – để báo DIM chồng tên hình.
-        def draw_caption(cv, v, s, cx, cy, c)
+        def draw_caption(cv, v, s, cx, cy, c, low = nil)
           c ||= {}
           name = c['text'].to_s.strip.empty? ? v[:name].to_s : c['text'].to_s
-          scale = DimEdit.scale_line(c['scale_text'], s)
+          scale = DimEdit.scale_line(c['scale_text'], s, c['scale_fixed'] == true)
           size = (c['size'] || 3.6).to_f
           ss = size * 2.4 / 3.6
           col = c['color'] || BLUE
           bold = c['bold'] == true
+          # tự tránh DIM nằm dưới hình (v2.18): chỉ khi người dùng CHƯA tự dời tên (đã dời thì giữ nguyên)
+          cy0 = cy
+          cy = [cy, low + size / 2 + 1.8].max if low && c['dx'].nil? && c['dy'].nil?
+          v[:caption_shift] = (cy - cy0).round(2)
           cx += c['dx'].to_f
           cy += c['dy'].to_f
           tw = cv.text_w(name, size)
           sw = cv.text_w(scale, ss)
           shift = { 'left' => ->(w) { w / 2 }, 'right' => ->(w) { -w / 2 } }[c['align']] || ->(_w) { 0 }
-          cv.group('class' => 'vcap', 'data-key' => v[:key].to_s) do
-            nx = cx + shift.call(tw)
+          nx = cx + shift.call(tw)
+          # dòng tỉ lệ: mặc định ngay dưới tên, dời riêng được bằng sdx/sdy
+          sx = cx + shift.call(sw) + c['sdx'].to_f
+          sy = cy + size * 4.6 / 3.6 + c['sdy'].to_f
+          cv.group('class' => 'vcap', 'data-key' => v[:key].to_s, 'data-part' => 'name') do
             cv.text(name, nx, cy, size, 0, col, bold)
             cv.line([nx - tw / 2, cy + size * 2.4 / 3.6], [nx + tw / 2, cy + size * 2.4 / 3.6], 0.3, col)
-            cv.text(scale, cx + shift.call(sw), cy + size * 4.6 / 3.6, ss, 0, col)
-            if cv.fmt == :svg # vùng bấm chọn (trong suốt) – không in ra PDF
-              x0 = [nx - tw / 2, cx + shift.call(sw) - sw / 2].min
-              x1 = [nx + tw / 2, cx + shift.call(sw) + sw / 2].max
-              cv.rect(x0 - 0.5, cy - size / 2 - 0.4, x1 - x0 + 1.0, size * 4.6 / 3.6 + ss / 2 + size / 2 + 0.8, 'transparent', nil)
-            end
+            cv.rect(nx - tw / 2 - 0.5, cy - size / 2 - 0.4, tw + 1.0, size * 2.4 / 3.6 + size / 2 + 0.8, 'transparent', nil) if cv.fmt == :svg
           end
-          x0 = [cx + shift.call(tw) - tw / 2, cx + shift.call(sw) - sw / 2].min
-          x1 = [cx + shift.call(tw) + tw / 2, cx + shift.call(sw) + sw / 2].max
-          [x0, cy - size / 2, x1, cy + size * 4.6 / 3.6 + ss / 2]
+          cv.group('class' => 'vcap', 'data-key' => v[:key].to_s, 'data-part' => 'scale') do
+            cv.text(scale, sx, sy, ss, 0, col)
+            cv.rect(sx - sw / 2 - 0.5, sy - ss / 2 - 0.4, sw + 1.0, ss + 0.8, 'transparent', nil) if cv.fmt == :svg
+          end
+          nb = [nx - tw / 2, cy - size / 2, nx + tw / 2, cy + size * 2.4 / 3.6]
+          sb = [sx - sw / 2, sy - ss / 2, sx + sw / 2, sy + ss / 2]
+          v[:caption_parts] = { 'name' => nb, 'scale' => sb }
+          [[nb[0], sb[0]].min, [nb[1], sb[1]].min, [nb[2], sb[2]].max, [nb[3], sb[3]].max]
         end
 
         def caption(cv, name, scale, cx, cy)

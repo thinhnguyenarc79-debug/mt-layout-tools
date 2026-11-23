@@ -203,3 +203,13 @@ aside h3 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: upperc
 .inl { position: fixed; z-index: 60; display: flex; gap: 3px; background: #fff; border: 1px solid #E8590C; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 .inl input, .inl textarea { font: 14px 'Segoe UI', Arial, sans-serif; border: 1px solid #ccc; padding: 2px 4px; }
 .inl button { padding: 0 6px; }
+
+/* v2.18: chữ & bảng vật liệu chỉ nhận chuột ở chế độ ✎ DIM & Chữ – không chặn chọn hình, Smart Snap, thêm DIM */
+#stage:not(.editmode) #paper g.vcap, #stage:not(.editmode) #paper g.legend { pointer-events: none; }
+#stage.editmode #paper g.legend { cursor: move; }
+#stage.editmode #paper g.legend rect[fill="transparent"] { pointer-events: all; }
+#stage.editmode #paper g.vcap rect[fill="transparent"] { pointer-events: all; }
+.lgTable { border-collapse: collapse; width: 100%; font-size: 12px; }
+.lgTable td, .lgTable th { padding: 2px 3px; border-bottom: 1px solid #E3E5E2; text-align: left; }
+.lgTable input[type=text] { width: 100%; box-sizing: border-box; }
+.lgTable button { padding: 0 4px; min-width: 0; }

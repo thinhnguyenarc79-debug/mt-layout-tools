@@ -96,7 +96,12 @@ class TestDimEdit < Minitest::Test
     vh = f[4] / f[2]
     # top1 ở oy - 5.5 + top: đặt đúng giữa hộp tên hình
     top = (cap[1] + cap[3]) / 2 - (f[1] - 5.5)
-    hit = DE.run('dimoff' => { 'front' => { 'top' => top } })
+    # v2.18: tên hình CHƯA dời tay -> tự xuống dưới chuỗi DIM (không chồng)
+    auto = DE.run('dimoff' => { 'front' => { 'top' => top } })
+    assert_nil MD.info(auto)['dim_caption_hits'], 'tên mặc định tự tránh DIM dưới hình'
+    assert MD.info(auto)['captions']['front'][1] > cap[1], 'tên hình được đặt thấp hơn chuỗi DIM'
+    # tên đã được người dùng đặt (dx/dy) -> giữ nguyên chỗ, chỉ cảnh báo chồng
+    hit = DE.run('dimoff' => { 'front' => { 'top' => top } }, 'captions' => { 'front' => { 'dy' => 0.0 } })
     assert MD.info(hit)['dim_caption_hits'], 'báo DIM chồng tên hình'
     assert_match(/DIM CHỒNG TÊN HÌNH/, MD.info(hit)['note'].to_s)
     assert_equal MD.info(base)['frames']['front'], MD.info(hit)['frames']['front'], 'không tự dời hình'
@@ -106,7 +111,7 @@ class TestDimEdit < Minitest::Test
     grp = DE.svg_of(hit)[/<g class="dimset" data-key="front" data-side="top" data-chain="top1">.*?<\/g>/m]
     ys = grp.scan(/d="M[\d.]+ ([\d.]+)L/).flatten.map(&:to_f)
     assert ys.any? { |y| (y - (f[1] + vh + 1)).abs < 0.05 }, 'gióng từ mép dưới'
-    far = DE.run('dimoff' => { 'front' => { 'top' => top + 22 } })
+    far = DE.run('dimoff' => { 'front' => { 'top' => top + 22 } }, 'captions' => { 'front' => { 'dy' => 0.0 } })
     assert_nil MD.info(far)['dim_caption_hits']
   end
 
@@ -115,7 +120,7 @@ class TestDimEdit < Minitest::Test
     a = DE.run
     b = DE.run('captions' => { 'front' => { 'text' => 'MẶT ĐỨNG TỦ ÁO', 'dx' => 12, 'dy' => 4 } })
     svg = DE.svg_of(b)
-    grp = svg[%r{<g class="vcap" data-key="front">.*?</g>}m]
+    grp = svg.scan(%r{<g class="vcap" data-key="front" data-part="[a-z]+">.*?</g>}m).join
     assert_includes grp, '>MẶT ĐỨNG TỦ ÁO<'
     assert_includes grp, '>TL 1:20<'
     assert_includes MD.info(b)['view_keys'], 'front', 'key hình nội bộ không đổi'

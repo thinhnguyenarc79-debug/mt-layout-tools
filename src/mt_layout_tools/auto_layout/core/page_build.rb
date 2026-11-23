@@ -520,7 +520,7 @@ module MTDesign
             notes = idx.zero? ? @notes.dup : []
             notes << note if note
             # mỗi tờ chỉ vẽ chú thích của chính nó
-            pg = @pg.merge('notes' => Array(@pg['notes']).select { |n| n['sheet'].to_i == idx })
+            pg = @pg.merge('notes' => Array(@pg['notes']).select { |n| n['sheet'].to_i == idx }, '__sheet' => idx)
             info = Sheet.assemble(cv, st[:ctx], st[:frags], pg, tb, notes)
             info['note'] = notes.empty? ? info['note'] : [info['note'], *notes].compact.uniq.join(' ')
             info['failed'] = @failed

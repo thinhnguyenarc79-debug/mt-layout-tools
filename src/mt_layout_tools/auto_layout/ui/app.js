@@ -960,6 +960,8 @@
       if (!already) selectDim(sl2, false);
       showDimCtx(e.clientX, e.clientY, sl2); return;
     }
+    var glg3 = e.target.closest && e.target.closest('g.legend');
+    if (glg3 && S.tool === 'edit') { legendCtx(e.clientX, e.clientY); return; }
     var gcp = e.target.closest && e.target.closest('g.vcap');
     if (gcp) { S.selCap = gcp.getAttribute('data-key'); textCtx(e.clientX, e.clientY, 'cap', S.selCap); return; }
     var gnt = e.target.closest && e.target.closest('g.note');
@@ -984,7 +986,9 @@
     var gd = e.target.closest && e.target.closest('g.dim, g.mdim');
     if (gd && (S.tool === 'select' || S.tool === 'edit')) { var sl3 = selOf(gd); selectDim(sl3, false); dimDialog(sl3); return; }
     var gc = e.target.closest && e.target.closest('g.vcap');
-    if (gc && (S.tool === 'edit' || S.tool === 'select')) { editCaption(gc.getAttribute('data-key')); return; }
+    if (gc && S.tool === 'edit') { editCaption(gc.getAttribute('data-key')); return; }
+    var glg2 = e.target.closest && e.target.closest('g.legend');
+    if (glg2 && S.tool === 'edit') { legendDialog(); return; }
     var gnn = e.target.closest && e.target.closest('g.note');
     if (gnn) { var nn2 = (page().notes || []).filter(function (x) { return x.id === gnn.getAttribute('data-id'); })[0]; if (nn2) { editNoteInline(nn2); return; } }
     var g = e.target.closest && e.target.closest('g.view');
@@ -1974,9 +1978,12 @@
   function editScaleLine(k) {
     var c = capObj(k) || {};
     dialog('Dòng tỷ lệ – ' + viewName(k), '<label>Nội dung <small>({TL} = tỷ lệ thật của hình, vd. "TỶ LỆ {TL}")</small></label><input id="slText" type="text" value="' + esc(c.scale_text || 'TL {TL}') + '">' +
-      '<p class="hint">Tỷ lệ in luôn lấy từ tỷ lệ thật (hiện 1:' + effScale(k) + '). Gõ cứng tỷ lệ khác (vd. 1:50) sẽ tự được thay bằng tỷ lệ thật – không in sai tỷ lệ bản vẽ.</p>',
+      '<p class="hint">Tỷ lệ in luôn lấy từ tỷ lệ thật (hiện 1:' + effScale(k) + '). Gõ cứng tỷ lệ khác (vd. 1:50) sẽ tự được thay bằng tỷ lệ thật – không in sai tỷ lệ bản vẽ.</p>' +
+      '<label class="checks"><input id="slFixed" type="checkbox"' + (c.scale_fixed ? ' checked' : '') + '> Cố ý dùng CHỮ TỰ NHẬP, không bám tỷ lệ thật (bản vẽ sẽ ghi chú cảnh báo)</label>',
       [['Mặc định', function () { capChange(k, function (cc) { cc.scale_text = null; }); }], ['Hủy'], ['Lưu', function () {
-        var v = $('slText').value.trim(); capChange(k, function (cc) { cc.scale_text = v && v !== 'TL {TL}' ? v : null; }, 'Đã sửa dòng tỷ lệ (vẫn bám tỷ lệ thật).');
+        var v = $('slText').value.trim(), fx = $('slFixed').checked;
+        capChange(k, function (cc) { cc.scale_text = v && v !== 'TL {TL}' ? v : null; cc.scale_fixed = (fx && cc.scale_text) ? true : null; },
+          fx ? 'Đã đặt CHỮ TỰ NHẬP cho dòng tỷ lệ – không bám tỷ lệ thật (có cảnh báo trên tờ).' : 'Đã sửa dòng tỷ lệ (vẫn bám tỷ lệ thật).');
       }, 'gold']]);
   }
   function editNoteInline(n) {
@@ -1994,6 +2001,7 @@
     h.push('<div class="hd">' + (kind === 'cap' ? 'Tên hình – ' + esc(viewName(ref)) : 'Chú thích') + '<small>' + (c.locked ? 'đã khóa' : (kind === 'cap' && (c.text || c.dx || c.dy) ? 'đã tùy chỉnh' : '')) + '</small></div>');
     it('edit', 'Sửa nội dung'); if (kind === 'cap') it('scale', 'Sửa dòng tỷ lệ…');
     it('move', 'Di chuyển (nhấp vị trí mới)');
+    if (kind === 'cap') { it('movescale', 'Di chuyển dòng tỷ lệ (nhấp vị trí mới)'); it('pos', 'Khôi phục vị trí mặc định (tên + tỷ lệ)'); }
     h.push('<div class="lb">Cỡ chữ (mm)</div><div class="grid">' + [2, 2.5, 3, 3.6, 4.5, 5, 6, 8].map(function (n) { return '<span data-act="sz:' + n + '" class="' + (Math.abs(n - size) < 0.01 ? 'on' : '') + '">' + n + '</span>'; }).join('') + '</div>');
     h.push('<div class="lb">Căn lề</div><div class="grid">' + [['left', 'Trái'], ['center', 'Giữa'], ['right', 'Phải']].map(function (a) { return '<span data-act="al:' + a[0] + '" class="' + (align === a[0] ? 'on' : '') + '">' + a[1] + '</span>'; }).join('') + '</div>');
     it('color', 'Màu…'); it('bold', 'Chữ đậm', !!c.bold); it('font', 'Font: Noto Sans (nhúng PDF, tiếng Việt)');
@@ -2008,6 +2016,8 @@
       if (act === 'edit') { if (kind === 'cap') editCaption(ref); else editNoteInline(ref); }
       else if (act === 'scale') editScaleLine(ref);
       else if (act === 'move') { if (c.locked) { msg('Chữ đang khóa.', 'warn'); return; } S.pickText = { kind: kind, ref: ref }; msg('Nhấp vị trí mới cho chữ. ESC để hủy.', ''); }
+      else if (act === 'movescale') { if (c.locked) { msg('Chữ đang khóa.', 'warn'); return; } S.pickText = { kind: 'capscale', ref: ref }; msg('Nhấp vị trí mới cho dòng tỷ lệ. ESC để hủy.', ''); }
+      else if (act === 'pos') capChange(ref, function (o) { delete o.dx; delete o.dy; delete o.sdx; delete o.sdy; }, 'Đã trả tên hình và dòng tỷ lệ về vị trí mặc định (tự tránh DIM dưới hình).');
       else if (act.indexOf('sz:') === 0) ch(function (o) { o.size = +act.slice(3); });
       else if (act.indexOf('al:') === 0) ch(function (o) { o.align = act.slice(3) === (kind === 'cap' ? 'center' : 'left') ? null : act.slice(3); });
       else if (act === 'color') colorDialog(c.color, function (v) { ch(function (o) { o.color = v; }); });
@@ -2095,6 +2105,122 @@
     call('perf_save', { text: text });
   }
 
+
+  // ---------------- BẢNG CHÚ THÍCH VẬT LIỆU (v2.18) ----------------
+  // page.legend: chỉ là chú giải 2D. Không bao giờ sửa material thật trong model SketchUp.
+  function legendCfg() { var p = page(); if (!p) return {}; return p.legend || (p.legend = {}); }
+  function legendChange(fn, note) {
+    snapshot(); var c = legendCfg(); fn(c);
+    Object.keys(c).forEach(function (f) { if (c[f] == null || c[f] === false || (Array.isArray(c[f]) && !c[f].length)) delete c[f]; });
+    changed(); requestRender(true); renderLegendPanel(); if (note) msg(note, 'ok');
+  }
+  // tên hình chưa từng dời: chốt vị trí hiện tại trước khi dời (để không còn "tự tránh DIM" làm lệch)
+  function capFreeze(k, c) {
+    if (c.dx == null && c.dy == null) { c.dx = 0; c.dy = (S.info && S.info.caption_shift && S.info.caption_shift[k]) || 0; }
+  }
+  function legendHiddenHere() { return (legendCfg().hidden_sheets || []).indexOf(S.sheet || 0) >= 0; }
+  function legendShow(on, all) {
+    legendChange(function (c) {
+      var hs = (c.hidden_sheets || []).slice(), cur = S.sheet || 0;
+      if (all) { hs = []; if (!on) for (var i = 0; i < Math.max(1, ((S.info && S.info.layout_sheets) || 1)); i++) hs.push(i); if (!on && hs.indexOf(cur) < 0) hs.push(cur); }
+      else if (on) hs = hs.filter(function (i) { return i !== cur; }); else if (hs.indexOf(cur) < 0) hs.push(cur);
+      c.hidden_sheets = hs;
+    }, on ? 'Đã hiện bảng chú thích vật liệu.' : 'Đã ẩn bảng chú thích vật liệu (chỉ ẩn chú giải 2D – vật liệu trong model SketchUp giữ nguyên).');
+  }
+  function legendCtx(x, y) {
+    var m = $('ctxMenu'), c = legendCfg(), h = [], it = function (act, label, on) { h.push('<div class="it' + (on ? ' on' : '') + '" data-act="' + act + '">' + esc(label) + '</div>'); };
+    h.push('<div class="hd">Chú thích vật liệu<small>' + (c.locked ? 'đã khóa vị trí' : (c.x != null ? 'vị trí tự đặt' : 'vị trí tự động')) + '</small></div>');
+    it('hide', 'Ẩn bảng vật liệu (tờ này)'); it('edit', 'Chỉnh sửa bảng vật liệu…'); it('move', 'Di chuyển (nhấp vị trí mới)');
+    h.push('<div class="lb">Số cột</div><div class="grid">' + [1, 2, 3, 4].map(function (n) { return '<span data-act="cols:' + n + '" class="' + ((c.cols || 1) === n ? 'on' : '') + '">' + n + '</span>'; }).join('') + '</div>');
+    it('lock', c.locked ? 'Mở khóa vị trí' : 'Khóa vị trí'); it('reset', 'Khôi phục vị trí mặc định');
+    m.innerHTML = h.join(''); m.hidden = false;
+    m.style.left = Math.max(4, Math.min(x, window.innerWidth - m.offsetWidth - 4)) + 'px';
+    m.style.top = Math.max(4, Math.min(y, window.innerHeight - m.offsetHeight - 4)) + 'px';
+    m.onclick = function (e) {
+      var a = e.target.closest('[data-act]'); if (!a) return; var act = a.dataset.act; hideCtx();
+      if (act === 'hide') legendShow(false, false);
+      else if (act === 'edit') legendDialog();
+      else if (act === 'move') { if (c.locked) { msg('Bảng đang khóa vị trí.', 'warn'); return; } S.pickText = { kind: 'legend' }; msg('Nhấp vị trí mới (góc trên-trái) cho bảng vật liệu. ESC để hủy.', ''); }
+      else if (act.indexOf('cols:') === 0) legendChange(function (o) { o.cols = +act.slice(5) > 1 ? +act.slice(5) : null; });
+      else if (act === 'lock') legendChange(function (o) { o.locked = !o.locked || null; }, c.locked ? 'Đã mở khóa vị trí bảng vật liệu.' : 'Đã khóa vị trí bảng vật liệu.');
+      else if (act === 'reset') legendChange(function (o) { delete o.x; delete o.y; delete o.locked; }, 'Bảng vật liệu về vị trí tự động (né các hình chiếu).');
+    };
+  }
+  // Chỉnh sửa bảng: mã / tên hiển thị / ghi chú / màu ô mẫu / ẩn dòng / thứ tự / cỡ chữ, khoảng cách dòng, độ rộng.
+  function legendDialog() {
+    var lg = S.info && S.info.legend, c = legendCfg();
+    if (!lg || !lg.rows || !lg.rows.length) { msg('Trang này chưa có vật liệu nào để chú thích.', 'warn'); return; }
+    var rows = lg.rows.map(function (r) { return JSON.parse(JSON.stringify(r)); });
+    var row = function (r, i) {
+      return '<tr data-i="' + i + '"><td><input type="checkbox" class="lgOn"' + (r.hidden ? '' : ' checked') + ' title="Hiện dòng này"></td>' +
+        '<td><input class="lgCode" type="text" value="' + esc(r.code) + '" style="width:64px"></td>' +
+        '<td><input class="lgName" type="text" value="' + esc(r.name) + '" title="Gốc trong SketchUp: ' + esc(r.orig_name) + '"></td>' +
+        '<td><input class="lgNote" type="text" value="' + esc(r.note || '') + '" placeholder="ghi chú / mô tả"></td>' +
+        '<td><input class="lgColor" type="color" value="' + esc(r.color || '#CCCCCC') + '"></td>' +
+        '<td style="white-space:nowrap"><button class="lgUp" title="Lên">▲</button><button class="lgDn" title="Xuống">▼</button><button class="lgOrig" title="Khôi phục thông tin gốc của dòng">↺</button></td></tr>';
+    };
+    var html = function () {
+      return '<p class="hint">Chỉ sửa CHÚ GIẢI 2D trên bản vẽ – vật liệu thật trong model SketchUp không bị đổi. Tên gốc hiện khi rê chuột vào ô tên.</p>' +
+        '<div style="max-height:300px;overflow:auto"><table class="lgTable"><tr><th>Hiện</th><th>Mã</th><th>Tên hiển thị</th><th>Ghi chú</th><th>Màu</th><th></th></tr>' +
+        rows.map(row).join('') + '</table></div>' +
+        '<div class="row"><div><label>Cỡ chữ</label><input id="lgSize" type="number" min="1.5" max="6" step="0.1" value="' + (c.size || 2.2) + '"></div>' +
+        '<div><label>Khoảng cách dòng</label><input id="lgGap" type="number" min="3" max="12" step="0.2" value="' + (c.gap || 4.2) + '"></div>' +
+        '<div><label>Độ rộng cột</label><input id="lgWidth" type="number" min="30" max="200" step="1" value="' + (c.width || 62) + '"></div>' +
+        '<div><label>Số cột</label><select id="lgCols">' + [1, 2, 3, 4].map(function (n) { return '<option' + ((c.cols || 1) === n ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div></div>' +
+        '<label class="checks"><input id="lgShow" type="checkbox"' + (legendHiddenHere() ? '' : ' checked') + '> Hiện bảng trên tờ này</label>';
+    };
+    var read = function () {
+      $('dlgBody').querySelectorAll('tr[data-i]').forEach(function (tr) {
+        var r = rows[+tr.dataset.i];
+        r.hidden = !tr.querySelector('.lgOn').checked; r.code = tr.querySelector('.lgCode').value.trim();
+        r.name = tr.querySelector('.lgName').value.trim(); r.note = tr.querySelector('.lgNote').value.trim(); r.color = tr.querySelector('.lgColor').value.toUpperCase();
+      });
+    };
+    var bind = function () {
+      $('dlgBody').querySelectorAll('tr[data-i]').forEach(function (tr) {
+        var i = +tr.dataset.i;
+        tr.querySelector('.lgUp').onclick = function () { read(); if (i > 0) { var t = rows[i - 1]; rows[i - 1] = rows[i]; rows[i] = t; } redraw(); };
+        tr.querySelector('.lgDn').onclick = function () { read(); if (i < rows.length - 1) { var t = rows[i + 1]; rows[i + 1] = rows[i]; rows[i] = t; } redraw(); };
+        tr.querySelector('.lgOrig').onclick = function () { read(); var r = rows[i]; r.code = r.orig_code; r.name = r.orig_name; r.note = ''; r.color = r.orig_color; r.hidden = false; redraw(); };
+      });
+    };
+    var redraw = function () { $('dlgBody').innerHTML = html(); bind(); };
+    dialog('Chỉnh sửa bảng chú thích vật liệu', html(), [['Khôi phục toàn bộ', function () {
+      legendChange(function (o) { delete o.rows; delete o.order; delete o.size; delete o.gap; delete o.width; delete o.cols; }, 'Đã khôi phục bảng vật liệu theo thông tin gốc của model.');
+    }], ['Hủy'], ['Lưu', function () {
+      read();
+      var seen = {}, dup = null;
+      rows.forEach(function (r) { var k = (r.code || '').toUpperCase(); if (!k) return; if (seen[k]) dup = r.code; seen[k] = 1; });
+      if (dup) { msg('Mã "' + dup + '" bị trùng – mỗi vật liệu cần một mã riêng. Chưa lưu.', 'err'); return false; }
+      var show = $('lgShow').checked, sz = +$('lgSize').value, gp = +$('lgGap').value, wd = +$('lgWidth').value, cl = +$('lgCols').value;
+      legendChange(function (o) {
+        o.order = rows.map(function (r) { return r.key; });
+        o.rows = {};
+        rows.forEach(function (r, i) {
+          var e = {};
+          if (r.code && r.code !== 'MAT-' + (i + 1 < 10 ? '0' : '') + (i + 1)) e.code = r.code;
+          if (r.name && r.name !== r.orig_name) e.name = r.name;
+          if (r.note) e.note = r.note;
+          if (r.color && r.color.toUpperCase() !== String(r.orig_color || '').toUpperCase()) e.color = r.color;
+          if (r.hidden) e.hidden = true;
+          if (Object.keys(e).length) o.rows[r.key] = e;
+        });
+        o.size = Math.abs(sz - 2.2) > 0.01 ? sz : null; o.gap = Math.abs(gp - 4.2) > 0.01 ? gp : null; o.width = Math.abs(wd - 62) > 0.5 ? wd : null; o.cols = cl > 1 ? cl : null;
+        var hs = (o.hidden_sheets || []).filter(function (x) { return x !== (S.sheet || 0); }); if (!show) hs.push(S.sheet || 0); o.hidden_sheets = hs;
+      }, 'Đã lưu bảng chú thích vật liệu (chỉ chú giải 2D – model SketchUp không đổi).');
+    }, 'gold']]);
+    bind();
+  }
+  $('lgShowHere').addEventListener('change', function () { legendShow(this.checked, false); });
+  $('lgEditBtn').onclick = function () { legendDialog(); };
+  $('lgResetBtn').onclick = function () { legendChange(function (o) { delete o.x; delete o.y; delete o.locked; }, 'Bảng vật liệu về vị trí tự động (né các hình chiếu).'); };
+  function renderLegendPanel() {
+    var box = $('lgPanel'); if (!box) return;
+    var lg = S.info && S.info.legend, c = legendCfg();
+    var n = lg && lg.rows ? lg.rows.length : 0, hid = lg && lg.rows ? lg.rows.filter(function (r) { return r.hidden; }).length : 0;
+    $('lgShowHere').checked = !legendHiddenHere();
+    $('lgInfo').textContent = n ? (n + ' vật liệu' + (hid ? ' (' + hid + ' dòng ẩn)' : '') + ' · ' + (c.x != null ? 'vị trí tự đặt' : 'tự né hình chiếu') + (c.locked ? ' · đã khóa' : '')) : 'Chưa có vật liệu.';
+  }
   // ---------------- trang & dựng ----------------
   function openPage(id, j) {
     S.cur = id || null; S.sel = null; S.info = null; S.sheet = j || 0; S.selNote = null;
@@ -2175,7 +2301,7 @@
     });
     if (!S.fitted) { fit(); S.fitted = true; } else applyView(true);
     overlay(); renderSyms();
-    highlight(); renderMd();
+    highlight(); renderMd(); renderLegendPanel();
     var paperName = S.project.paper;
     $('stInfo').textContent = paperName + ' ngang · TL ' + (info.scale_label || '1:' + info.scale) + ' · ' + (info.ms || 0) + ' ms';
     if (info.note) msg(info.note, 'warn');
@@ -2247,7 +2373,9 @@
     }
     if (e.button === 0 && S.pickText) {
       var pt3 = toPaper(e), tk = S.pickText; S.pickText = null;
-      if (tk.kind === 'cap') { var cp0 = capPaperPos(tk.ref); if (cp0) capChange(tk.ref, function (c) { c.dx = Math.round(((c.dx || 0) + pt3[0] - cp0[0]) * 100) / 100; c.dy = Math.round(((c.dy || 0) + pt3[1] - cp0[1]) * 100) / 100; }, 'Đã dời tên hình.'); }
+      if (tk.kind === 'cap') { var cp0 = capPaperPos(tk.ref); if (cp0) capChange(tk.ref, function (c) { capFreeze(tk.ref, c); c.dx = Math.round(((c.dx || 0) + pt3[0] - cp0[0]) * 100) / 100; c.dy = Math.round(((c.dy || 0) + pt3[1] - cp0[1]) * 100) / 100; }, 'Đã dời tên hình.'); }
+      else if (tk.kind === 'capscale') { var sb0 = S.info.caption_parts && S.info.caption_parts[tk.ref] && S.info.caption_parts[tk.ref].scale; if (sb0) capChange(tk.ref, function (c) { c.sdx = Math.round(((c.sdx || 0) + pt3[0] - (sb0[0] + sb0[2]) / 2) * 100) / 100; c.sdy = Math.round(((c.sdy || 0) + pt3[1] - (sb0[1] + sb0[3]) / 2) * 100) / 100; }, 'Đã dời dòng tỉ lệ.'); }
+      else if (tk.kind === 'legend') legendChange(function (c) { c.x = Math.round(pt3[0] * 100) / 100; c.y = Math.round(pt3[1] * 100) / 100; }, 'Đã đặt bảng vật liệu.');
       else noteChange(tk.ref, function (n) { n.x = pt3[0]; n.y = pt3[1]; }, 'Đã dời chú thích.');
       e.preventDefault(); return;
     }
@@ -2305,10 +2433,20 @@
     if (e.button === 0 && S.selDims && S.selDims.length && !(e.target.closest && e.target.closest('g.dimgrips'))) clearDimSel();
     var gcap = e.button === 0 && S.tool === 'edit' && !spaceDown && e.target.closest && e.target.closest('g.vcap');
     if (gcap) {
-      var ck = gcap.getAttribute('data-key'); S.selCap = ck;
+      var ck = gcap.getAttribute('data-key'), part = gcap.getAttribute('data-part') || 'name'; S.selCap = ck;
       if ((capObj(ck) || {}).locked) { msg('Tên hình đang khóa vị trí – chuột phải → Mở khóa.', 'warn'); e.preventDefault(); return; }
-      drag = { mode: 'cap', key: ck, g: gcap, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
-      msg('Kéo để dời tên hình (chỉ chữ di chuyển). Nhấp đúp để sửa nội dung.', ''); e.preventDefault(); e.stopPropagation(); return;
+      // kéo TÊN: tên + dòng tỉ lệ đi cùng; kéo DÒNG TỈ LỆ: chỉ dòng tỉ lệ (tỉ lệ hình không đổi)
+      var els = part === 'scale' ? [gcap] : Array.prototype.slice.call($('paper').querySelectorAll('g.vcap[data-key="' + ck + '"]'));
+      drag = { mode: 'cap', key: ck, part: part, els: els, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+      msg(part === 'scale' ? 'Kéo để dời riêng dòng tỉ lệ (tỉ lệ hình không đổi).' : 'Kéo để dời tên hình (chỉ chữ di chuyển). Nhấp đúp để sửa nội dung.', '');
+      e.preventDefault(); e.stopPropagation(); return;
+    }
+    var glg = e.button === 0 && S.tool === 'edit' && !spaceDown && e.target.closest && e.target.closest('g.legend');
+    if (glg) {
+      var lc = legendCfg();
+      if (lc.locked) { msg('Bảng vật liệu đang khóa vị trí – chuột phải → Mở khóa.', 'warn'); e.preventDefault(); return; }
+      drag = { mode: 'legend', g: glg, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+      msg('Kéo bảng chú thích vật liệu tới chỗ trống. Chuột phải để ẩn / chỉnh sửa / khóa.', ''); e.preventDefault(); e.stopPropagation(); return;
     }
     var gn = e.button === 0 && (S.tool === 'select' || S.tool === 'edit') && !spaceDown && e.target.closest && e.target.closest('g.note');
     if (gn) {
@@ -2351,9 +2489,9 @@
     if (!drag && S.pickGrip) { frameMove(function (ev) { if (S.pickGrip) gripMove(S.pickGrip, ev); }, e); return; }
     if (!drag) return;
     if (drag.mode === 'grip') { var dg = drag; frameMove(function (ev) { if (drag === dg) gripMove(dg, ev); }, e); return; }
-    if (drag.mode === 'cap') {
+    if (drag.mode === 'cap' || drag.mode === 'legend') {
       drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
-      drag.g.setAttribute('transform', 'translate(' + drag.dx + ' ' + drag.dy + ')'); return;
+      (drag.els || [drag.g]).forEach(function (el) { el.setAttribute('transform', 'translate(' + drag.dx + ' ' + drag.dy + ')'); }); return;
     }
     if (drag.mode === 'pan') {
       S.panX = drag.px + e.clientX - drag.x; S.panY = drag.py + e.clientY - drag.y; applyView();
@@ -2385,8 +2523,15 @@
     var d = drag; drag = null; $('stage').classList.remove('panning');
     if (d.mode === 'grip') { gripCommit(d); return; }
     if (d.mode === 'cap') {
+      if (Math.abs(d.dx) < 0.2 && Math.abs(d.dy) < 0.2) { d.els.forEach(function (el) { el.removeAttribute('transform'); }); return; }
+      if (d.part === 'scale') capChange(d.key, function (c) { c.sdx = Math.round(((c.sdx || 0) + d.dx) * 100) / 100; c.sdy = Math.round(((c.sdy || 0) + d.dy) * 100) / 100; }, 'Đã dời riêng dòng tỉ lệ – tỉ lệ hình chiếu không đổi.');
+      else capChange(d.key, function (c) { capFreeze(d.key, c); c.dx = Math.round(((c.dx || 0) + d.dx) * 100) / 100; c.dy = Math.round(((c.dy || 0) + d.dy) * 100) / 100; }, 'Đã dời tên hình – hình chiếu và DIM không đổi.');
+      return;
+    }
+    if (d.mode === 'legend') {
       if (Math.abs(d.dx) < 0.2 && Math.abs(d.dy) < 0.2) { d.g.removeAttribute('transform'); return; }
-      capChange(d.key, function (c) { c.dx = Math.round(((c.dx || 0) + d.dx) * 100) / 100; c.dy = Math.round(((c.dy || 0) + d.dy) * 100) / 100; }, 'Đã dời tên hình – hình chiếu và DIM không đổi.');
+      var lb = S.info && S.info.legend && S.info.legend.box; if (!lb) return;
+      legendChange(function (c) { c.x = Math.round((lb[0] + d.dx) * 100) / 100; c.y = Math.round((lb[1] + d.dy) * 100) / 100; }, 'Đã đặt bảng vật liệu ở vị trí mới – cập nhật hình chiếu không làm bảng nhảy về chỗ cũ.');
       return;
     }
     if (d.mode === 'dethandle') {

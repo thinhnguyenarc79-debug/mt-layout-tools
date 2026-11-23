@@ -1,7 +1,7 @@
 {
-  "version": "2.17.1",
+  "version": "2.18.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "0c5856322e6977f1e5bdd11ed25a5e7ec84e2cfcd4eb5102851600094bdf2862",
-  "notes": "v2.17.1: sửa CHI TIẾT 2, 3... bị trống hình học (trùng id vùng cắt SVG); báo lỗi khi vùng trích trống; log chẩn đoán chi tiết"
+  "sha256": "05be6e3ed421e60900c593ccdecbbeda35ed7343480b7c7a1c50bd88b16373d1",
+  "notes": "v2.18.0: chỉnh sửa bảng chú thích vật liệu; tên hình & dòng tỷ lệ kéo độc lập, không chặn thêm DIM"
 }
