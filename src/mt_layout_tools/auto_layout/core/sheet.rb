@@ -266,6 +266,7 @@ module MTDesign
             add_note(info, "#{v[:name]}: dòng tỉ lệ là CHỮ TỰ NHẬP (\"#{DimEdit.scale_line(cc['scale_text'], sc.round, true)}\"), " \
                            "không theo tỉ lệ thật 1:#{sc.round}.")
           end
+          view_region(key, auto + man, info)
           cb = v[:caption_box]
           return unless cb
 
@@ -281,6 +282,66 @@ module MTDesign
 
           (info['dim_caption_hits'] ||= {})[key] = hit.map { |d| d['id'] }
           add_note(info, "DIM CHỒNG TÊN HÌNH #{v[:name]}: #{hit.map { |d| d['text'] || d['label'] }.first(6).join(', ')} – kéo DIM hoặc tên hình ra (chế độ ✎ DIM & Chữ).")
+        end
+
+        # v2.18.2: VÙNG CỦA HÌNH = khung chiếm chỗ (info['boxes']) mở rộng tới mọi DIM / chữ DIM / tên hình đang hiện.
+        # Kéo DIM ra xa tới đâu vùng nới tới đó: dùng cho khung chọn, vùng bấm và kiểm tra chồng hình. Khung chiếm chỗ
+        # (gốc toạ độ vị trí đã chốt) giữ nguyên -> hình học không xê dịch trên giấy.
+        def view_region(key, dims, info)
+          b = (info['boxes'] || {})[key]
+          return unless b
+
+          x0, y0, x1, y1 = b[0], b[1], b[0] + b[2], b[1] + b[3]
+          grow = lambda do |p|
+            next unless p.is_a?(Array) && p.length >= 2
+
+            x0 = [x0, p[0]].min
+            y0 = [y0, p[1]].min
+            x1 = [x1, p[0]].max
+            y1 = [y1, p[1]].max
+          end
+          dims.each do |d|
+            g = d['geo']
+            next if !g || d['hidden'] || d['deleted']
+
+            %w[pa pb la lb tc].each { |f| grow.call(g[f]) }
+            if (t = g['tbox'])
+              grow.call([t[0], t[1]])
+              grow.call([t[2], t[3]])
+            end
+          end
+          if (cb = (info['captions'] || {})[key])
+            grow.call([cb[0], cb[1]])
+            grow.call([cb[2], cb[3]])
+          end
+          # chỉ nới cạnh nào DIM/chữ vượt khung rõ rệt (> 1.5 mm giấy); phần lấn nhỏ sẵn có của Auto DIM / tên hình bỏ qua
+          lim = 1.5
+          pad = 0.8
+          bx1 = b[0] + b[2]
+          by1 = b[1] + b[3]
+          x0 = x0 < b[0] - lim ? x0 - pad : b[0]
+          y0 = y0 < b[1] - lim ? y0 - pad : b[1]
+          x1 = x1 > bx1 + lim ? x1 + pad : bx1
+          y1 = y1 > by1 + lim ? y1 + pad : by1
+          (info['regions'] ||= {})[key] = [x0, y0, x1 - x0, y1 - y0].map { |n| n.round(2) }
+        end
+
+        # Hình có DIM kéo ra xa: vùng (đã nới) chồng lên vùng hình khác -> báo (không tự dời hình nào).
+        def report_region_overlaps(info, names = {})
+          regs = info['regions'] || {}
+          keys = regs.keys
+          done = Array(info['conflicts']).select { |c| c['type'] == 'overlap' }.map { |c| [c['a'], c['b']].sort }
+          keys.combination(2).each do |ka, kb|
+            a = regs[ka]
+            b = regs[kb]
+            next if a == info['boxes'][ka] && b == info['boxes'][kb] # không DIM nào ra ngoài khung -> đã kiểm ở bước xếp chỗ
+            next unless a[0] < b[0] + b[2] - 0.5 && b[0] < a[0] + a[2] - 0.5 && a[1] < b[1] + b[3] - 0.5 && b[1] < a[1] + a[3] - 0.5
+            next if done.include?([ka, kb].sort)
+
+            (info['conflicts'] ||= []) << { 'type' => 'overlap', 'a' => ka, 'b' => kb, 'by' => 'dims' }
+            add_note(info, "DIM KÉO RA NGOÀI: vùng của #{names[ka] || ka} (gồm DIM) chồng lên " \
+                           "#{names[kb] || kb} – kéo DIM hoặc hình ra chỗ trống.")
+          end
         end
 
         # DIM thủ công 2 điểm: vẽ sau Auto DIM, độc lập với nó (tắt Auto DIM vẫn hiện; chạy lại Auto DIM không xoá).
@@ -323,10 +384,11 @@ module MTDesign
             cv.clip(frame[0] + 1.2, frame[1] + 1.2, tb_x - frame[0] - 1.2, frame[3] - frame[1] - 2.4) do
               frags.each { |f| cv.raw(f) }
             end
+            report_region_overlaps(info, Array(ctx[:placements]).map { |pl| [pl[0][:key].to_s, pl[0][:name]] }.to_h)
           end
           # bảng chú thích vật liệu (chú giải 2D, chỉnh được – v2.18); không che hình: báo nếu chồng
           lcfg = (page['legend'] || {}).merge('hidden_all' => page['legend_hidden'] == true)
-          lg = info['legend'] = Legend.draw(cv, ctx[:mats] || ctx[:legend], lcfg, area, info['boxes'] || {}, page['__sheet'].to_i)
+          lg = info['legend'] = Legend.draw(cv, ctx[:mats] || ctx[:legend], lcfg, area, (info['boxes'] || {}).merge(info['regions'] || {}), page['__sheet'].to_i)
           unless Array(lg['covers']).empty?
             names = lg['covers'].map { |k| (ctx[:placements].find { |pl| pl[0][:key].to_s == k.to_s } || [{ name: k }])[0][:name] }
             add_note(info, "BẢNG VẬT LIỆU CHE #{names.join(', ')} – kéo bảng ra chỗ trống (chế độ ✎ DIM & Chữ) hoặc ẩn bảng.")

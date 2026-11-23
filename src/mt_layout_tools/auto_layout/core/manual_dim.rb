@@ -24,6 +24,7 @@ module MTDesign
         BROKEN = '#C0392B'.freeze
         TXT = 2.2
         TOL = 0.6 # mm thật: điểm coi là nằm trên nét
+        FREE = 'free' # điểm bám đặt tự do (không gắn hình học) – không kiểm tra mất liên kết
         AXES = %w[v h a].freeze
         SIDES = %w[l r t b in].freeze
         MAX_PER_VIEW = 300
@@ -46,6 +47,7 @@ module MTDesign
 
         def clean_ref(r)
           return false if r == false
+          return FREE if r == FREE
           return nil unless r.is_a?(Hash) && r['p'].to_s =~ %r{\A\d+(/\d+){0,30}\z}
 
           ax = lambda do |val, lo, hi|
@@ -137,7 +139,7 @@ module MTDesign
         # đường đánh dấu mặt cắt (những thứ đó không nằm trong v[:lines] / v[:cut][:segs]).
         def segs(v)
           v[:snap_segs] ||= begin
-            all = Array(v[:lines]) + Array(v[:cut] && v[:cut][:segs])
+            all = Array(v[:lines]) + Array(v[:cut] && v[:cut][:segs]) + Array(v[:snap_more]) # snap_more: hình nguồn quanh chi tiết
             seen = {}
             out = []
             all.each do |p, q|
@@ -171,7 +173,7 @@ module MTDesign
         end
 
         def segs_total(v)
-          Array(v[:lines]).length + Array(v[:cut] && v[:cut][:segs]).length
+          Array(v[:lines]).length + Array(v[:cut] && v[:cut][:segs]).length + Array(v[:snap_more]).length
         end
 
         def dist_seg(p, s)
@@ -229,11 +231,15 @@ module MTDesign
             rk = "r#{k}"
             pt = d[k]
             if d[rk].nil?
-              # mới tạo / vừa kéo sang điểm khác: chưa có liên kết -> gắn theo hình học hiện tại
+              # mới tạo / vừa kéo sang điểm khác: chưa có liên kết -> gắn theo hình học hiện tại.
+              # Điểm đặt tự do (không nằm trên hình học nào) -> 'free': người dùng cố ý đặt, không bao giờ báo mất
+              # liên kết (trước v2.18.2 điểm này thành false rồi lần dựng sau bị báo đỏ "(!)").
               d[rk] = ref_for(v, pt, d['axis'])
+              d[rk] = FREE if d[rk] == false && !on_geometry?(v, pt)
               next
             end
-            if d[rk] && (rect = rs[d[rk]['p']])
+            next if d[rk] == FREE
+            if d[rk].is_a?(Hash) && (rect = rs[d[rk]['p']])
               d[k] = from_ref(d[rk], rect) # model đổi -> điểm đi theo mép bộ phận
               next
             end

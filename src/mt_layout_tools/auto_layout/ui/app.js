@@ -1918,6 +1918,24 @@
     });
     changed(); requestRender(true); msg('Đã gộp ' + list.length + ' DIM thành 1 chuỗi thẳng hàng (cách mép ' + mdLabel(t.d.off) + ' mm giấy).', 'ok');
   }
+  // v2.18.2: điểm bám DIM nằm ngoài vùng khoanh chi tiết -> Ruby đã nới vùng khoanh và dời gốc toạ độ chi tiết
+  // (điểm bám DIM, id đoạn DIM tự động đã chỉnh, vị trí đã chốt). Nhận lại đúng dữ liệu đó (thuộc cùng bước hoàn tác
+  // với thao tác kéo vừa rồi – ↶ đưa cả vùng khoanh lẫn DIM về như cũ).
+  function detailGrow(info) {
+    var p = page(), pt = info.page_patch; if (!p || !pt || !info.detail_grow) return;
+    ['details', 'manual_dims', 'dim_over', 'view_props'].forEach(function (f) { if (pt[f]) p[f] = JSON.parse(JSON.stringify(pt[f])); });
+    info.detail_grow.forEach(function (g) {
+      var dx = g.shift[0], dy = g.shift[1];
+      (S.selDims || []).forEach(function (x) {
+        var m = x.key === g.key && x.origin === 'auto' && /^(top1|top2|left|right):(-?[\d.]+)-(-?[\d.]+)$/.exec(x.id); if (!m) return;
+        var d = m[1].indexOf('top') === 0 ? dx : dy, r = function (n) { return (Math.round((+n + d) * 10) / 10).toFixed(1); };
+        x.id = m[1] + ':' + r(m[2]) + '-' + r(m[3]);
+      });
+      if (S.snapData) delete S.snapData[g.key]; if (S.snapReq) delete S.snapReq[g.key]; // hình học chi tiết đã đổi
+    });
+    markDirty();
+    msg(info.detail_grow.map(function (g) { return viewName(g.key) + ': vùng khoanh tự nới theo DIM'; }).join(' · ') + ' (↶ để hoàn tác).', 'ok');
+  }
   // nhận lại liên kết bộ phận Ruby vừa gắn cho đoạn tự động đã đổi điểm bám (không tạo bước hoàn tác)
   function dimSync(info) {
     var p = page(); if (!p || !p.dim_over || !info.dims) return;
@@ -2274,7 +2292,7 @@
     setTimeout(function () { detailVerify(info); }, 0);
     if (S.openedPage !== S.cur) { S.snapData = {}; S.snapReq = {}; S.openedPage = S.cur; } // đổi trang: bỏ dữ liệu bắt điểm cũ
     if (S.tool === 'mdim' || S.tool === 'edit' || (S.selDims && S.selDims.length)) setTimeout(snapPrefetch, 0);
-    mdSync(info); dimSync(info);
+    detailGrow(info); mdSync(info); dimSync(info);
     if (S.selDims) S.selDims = S.selDims.filter(function (x) { return !!dimInfo(x.key, x.id); });
     var pp = page();
     if (pp && info.sheets && pp.sheet_count !== info.sheets) {
@@ -2314,7 +2332,7 @@
     var svgEl = paper.querySelector('svg');
     svgEl.removeAttribute('width'); svgEl.removeAttribute('height');
     svgEl.querySelectorAll('g.view').forEach(function (g) {
-      var b = info.boxes[g.getAttribute('data-key')];
+      var gk = g.getAttribute('data-key'), b = (info.regions && info.regions[gk]) || info.boxes[gk]; // vùng hình gồm cả DIM kéo ra xa (v2.18.2)
       if (!b) return;
       var r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       r.setAttribute('class', 'selbox'); r.setAttribute('x', b[0]); r.setAttribute('y', b[1]);

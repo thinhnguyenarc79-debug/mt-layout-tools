@@ -1,7 +1,7 @@
 {
-  "version": "2.18.1",
+  "version": "2.18.2",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "a42887917e8413db41c8f4efe3b027361092d1f7c4ebc336691342b8c7917d5f",
-  "notes": "v2.18.1: ẩn/hiện bảng chú thích vật liệu hàng loạt (mọi tờ của trang / toàn bộ dự án)"
+  "sha256": "72a70db7da8a20d28a9fef568f741590fcbe45723be4cf300589a24c7a65ab5a",
+  "notes": "v2.18.2: Kéo DIM ra ngoài vùng hình không còn báo đỏ sai; vùng khoanh chi tiết tự nới theo điểm bám DIM; vùng hình (khung chọn, kiểm tra chồng) gồm cả DIM kéo ra xa."
 }

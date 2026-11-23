@@ -346,6 +346,11 @@ module MTDesign
             end
             begin
               t0 = Time.now
+              if (g = DetailEngine.grow(det, src, @pg))
+                (@grown ||= []) << g
+                @env.log("CHI TIẾT #{det['n']}: điểm bám DIM nằm ngoài vùng khoanh -> nới vùng #{g['old'].inspect} -> " \
+                         "#{g['rect'].inspect} (dời gốc #{g['shift'].inspect} mm)")
+              end
               dv = DetailEngine.build(src, det)
               dv[:dim_mode] = :interior
               @views << dv
@@ -541,6 +546,12 @@ module MTDesign
             info['door_items'] = group.select { |v| v[:door_items] }.map { |v| [v[:key], v[:door_items]] }.to_h
             info['part_hits'] = group.select { |v| v[:part_rects] && !v[:detail] }.map { |v| [v[:key], v[:part_rects]] }.to_h
             info['view_props'] = @pg['view_props'] || {}
+            # v2.18.2: vùng chi tiết đã tự nới theo DIM -> giao diện nhận lại dữ liệu trang đã dời gốc (không tạo bước hoàn tác)
+            if @grown && !@grown.empty?
+              info['detail_grow'] = @grown
+              info['page_patch'] = { 'details' => @pg['details'], 'manual_dims' => @pg['manual_dims'] || {},
+                                     'dim_over' => @pg['dim_over'] || {}, 'view_props' => @pg['view_props'] || {} }
+            end
             info['view_keys'] = group.map { |v| v[:key] }
             info['sheet'] = idx
             info['sheets'] = total

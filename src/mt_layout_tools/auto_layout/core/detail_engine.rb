@@ -88,6 +88,133 @@ module MTDesign
           "det:#{det['n']}"
         end
 
+        # ---------- v2.18.2: vùng trích tự nới theo DIM ----------
+        # Người dùng kéo điểm bám DIM (thủ công hoặc DIM tự động đã đổi điểm) ra ngoài vùng khoanh -> vùng khoanh tự nới
+        # tới đó (trong giới hạn hình nguồn) để hình học ở điểm bám hiện ra và DIM không bị báo mất liên kết.
+        # Toạ độ hình chi tiết có gốc ở góc trên-trái vùng khoanh, nên khi nới sang trái/lên trên phải dời theo:
+        # điểm bám DIM, id đoạn DIM tự động đã chỉnh, vị trí đã chốt của hình (để hình học đứng yên trên giấy).
+        # Trả về { 'n', 'rect' (mới), 'old', 'shift' } hoặc nil nếu không cần nới. Sửa trực tiếp det và page.
+        GROW_TOL = 0.5
+        SEG_ID = /\A(top1|top2|left|right):(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)\z/.freeze
+
+        def anchor_points(page, k)
+          pts = []
+          Array((page['manual_dims'] || {})[k]).each do |d|
+            next if !d.is_a?(Hash) || d['hidden'] == true
+
+            pts << d['a'] << d['b']
+          end
+          ((page['dim_over'] || {})[k] || {}).each_value do |o|
+            next if !o.is_a?(Hash) || o['deleted'] == true || o['hidden'] == true || !o['a'] || !o['b']
+
+            pts << o['a'] << o['b']
+          end
+          pts.select { |p| p.is_a?(Array) && p.length == 2 && p.all? { |n| n.is_a?(Numeric) } }
+        end
+
+        def inside?(p, w, h, shape, tol = GROW_TOL)
+          return false unless p[0] >= -tol && p[0] <= w + tol && p[1] >= -tol && p[1] <= h + tol
+          return true if shape == 'rect'
+
+          rx = w / 2.0
+          ry = h / 2.0
+          return false if rx <= 0 || ry <= 0
+
+          ((p[0] - rx) / (rx + tol))**2 + ((p[1] - ry) / (ry + tol))**2 <= 1.0
+        end
+
+        def grow(det, src, page)
+          k = key(det)
+          x0, y0, x1, y1 = det['rect']
+          shape = (det['marker'] || {})['shape'] || 'rect'
+          pts = anchor_points(page, k)
+          out = pts.reject { |p| inside?(p, x1 - x0, y1 - y0, shape) }
+          return nil if out.empty?
+
+          sw = src[:w].to_f
+          sh = src[:h].to_f
+          m = [5.0, 0.04 * [x1 - x0, y1 - y0].max].max
+          src_pts = out.map { |p| [p[0] + x0, p[1] + y0] }
+          nx0 = [x0, src_pts.map { |p| p[0] - m }.min].min
+          ny0 = [y0, src_pts.map { |p| p[1] - m }.min].min
+          nx1 = [x1, src_pts.map { |p| p[0] + m }.max].max
+          ny1 = [y1, src_pts.map { |p| p[1] + m }.max].max
+          if shape != 'rect'
+            # elip nội tiếp phải chứa mọi điểm bám: phóng khung quanh tâm theo bán kính chuẩn hoá lớn nhất
+            cx = (nx0 + nx1) / 2.0
+            cy = (ny0 + ny1) / 2.0
+            rx = (nx1 - nx0) / 2.0
+            ry = (ny1 - ny0) / 2.0
+            all = pts.map { |p| [p[0] + x0, p[1] + y0] }
+            f = all.map { |p| Math.sqrt(((p[0] - cx) / rx)**2 + ((p[1] - cy) / ry)**2) }.max * 1.02
+            if f > 1
+              rx *= f
+              ry *= f
+              nx0, nx1, ny0, ny1 = cx - rx, cx + rx, cy - ry, cy + ry
+            end
+          end
+          # không vượt ra ngoài hình nguồn (ngoài đó không có hình học)
+          lo_x = [0.0, x0].min
+          lo_y = [0.0, y0].min
+          nx0 = [nx0, lo_x].max
+          ny0 = [ny0, lo_y].max
+          nx1 = [nx1, [sw, x1].max].min
+          ny1 = [ny1, [sh, y1].max].min
+          rect = [nx0, ny0, nx1, ny1].map { |v| v.round(1) }
+          return nil if rect == det['rect'].map { |v| v.to_f.round(1) }
+
+          old = det['rect'].dup
+          dx = (x0 - rect[0]).round(1)
+          dy = (y0 - rect[1]).round(1)
+          det['rect'] = rect
+          shift_anchors(page, k, dx, dy) if dx.nonzero? || dy.nonzero?
+          shift_pin(page, k, dx, dy, det) if dx.nonzero? || dy.nonzero?
+          { 'n' => det['n'], 'key' => k, 'rect' => rect, 'old' => old, 'shift' => [dx, dy] }
+        end
+
+        def shift_pt(p, dx, dy)
+          [(p[0] + dx).round(2), (p[1] + dy).round(2)]
+        end
+
+        def shift_anchors(page, k, dx, dy)
+          Array((page['manual_dims'] || {})[k]).each do |d|
+            next unless d.is_a?(Hash)
+
+            d['a'] = shift_pt(d['a'], dx, dy) if d['a'].is_a?(Array)
+            d['b'] = shift_pt(d['b'], dx, dy) if d['b'].is_a?(Array)
+            # DIM đặt "trong hình": off là khoảng cách (mm thật) từ mép trên/trái hình -> đi theo gốc mới
+            d['off'] = (d['off'].to_f + (d['axis'] == 'h' ? dy : dx)).round(2) if d['side'] == 'in'
+          end
+          over = (page['dim_over'] || {})[k]
+          return unless over.is_a?(Hash)
+
+          moved = {}
+          over.each do |id, o|
+            nid = id
+            if (m = SEG_ID.match(id.to_s))
+              d = m[1].start_with?('top') ? dx : dy
+              nid = "#{m[1]}:#{(m[2].to_f + d).round(1)}-#{(m[3].to_f + d).round(1)}"
+            end
+            if o.is_a?(Hash)
+              o['a'] = shift_pt(o['a'], dx, dy) if o['a'].is_a?(Array)
+              o['b'] = shift_pt(o['b'], dx, dy) if o['b'].is_a?(Array)
+            end
+            moved[nid] = o
+          end
+          page['dim_over'][k] = moved
+        end
+
+        # Hình đã chốt chỗ: toạ độ là góc trên-trái khung -> lùi theo phần nới để nét cũ đứng yên trên giấy.
+        def shift_pin(page, k, dx, dy, det)
+          vp = (page['view_props'] || {})[k]
+          return unless vp.is_a?(Hash) && vp['x_mm'] && vp['y_mm']
+
+          s = (vp['scale_override'] || det['scale']).to_f
+          s = 1.0 unless s.positive?
+          vp['x_mm'] = (vp['x_mm'].to_f - dx / s).round(2)
+          vp['y_mm'] = (vp['y_mm'].to_f - dy / s).round(2)
+        end
+
         # Cắt đoạn thẳng theo hình chữ nhật (Liang–Barsky). Trả về đoạn đã cắt hoặc nil.
         def clip_seg(a, b, r)
           x0, y0, x1, y1 = r
@@ -112,6 +239,21 @@ module MTDesign
             end
           end
           [[a[0] + dx * t0, a[1] + dy * t0], [a[0] + dx * t1, a[1] + dy * t1]]
+        end
+
+        # Hình học nguồn QUANH vùng khoanh (toạ độ chi tiết) – chỉ để bắt điểm: kéo điểm bám DIM ra ngoài vùng
+        # vẫn bắt được cạnh thật của hình nguồn; dựng lại thì vùng khoanh tự nới tới điểm đó (grow).
+        def around(src, rect)
+          x0, y0, x1, y1 = rect
+          m = [x1 - x0, y1 - y0].max * 0.75
+          win = [x0 - m, y0 - m, x1 + m, y1 + m]
+          all = Array(src[:lines]) + Array(src[:cut] && src[:cut][:segs])
+          all.filter_map do |a, b|
+            next unless a && b
+
+            s = clip_seg(a, b, win)
+            s && s.map { |p| [p[0] - x0, p[1] - y0] }
+          end
         end
 
         # Tạo hình chi tiết từ hình nguồn. Toạ độ hình chi tiết: gốc tại góc trên-trái vùng khoanh.
@@ -141,7 +283,7 @@ module MTDesign
 
           {
             key: key(det), name: label(det), w: x1 - x0, h: y1 - y0, dims: true, level: src[:level],
-            lines: lines, fills: [], notes: [], stats: {}, fixed_scale: det['scale'],
+            lines: lines, fills: [], notes: [], stats: {}, fixed_scale: det['scale'], snap_more: around(src, det['rect']),
             detail: { src: src, rect: det['rect'], shape: shape, n: det['n'], fill: det['fill'], stats: stats },
             border: shape == 'rect' ? nil : ellipse_pts(x1 - x0, y1 - y0)
           }
