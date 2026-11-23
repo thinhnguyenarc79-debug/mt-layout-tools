@@ -74,6 +74,46 @@ module MTDesign
           end
         end
 
+        # Nhiều đa giác CÙNG MÀU liền nhau trong thứ tự vẽ -> 1 phần tử (v2.16). Kết quả hiển thị y hệt vẽ từng cái:
+        # mỗi đa giác được đưa về cùng chiều quay nên quy tắc tô nonzero cho phép hợp (không thủng lỗ chỗ chồng nhau),
+        # viền cùng màu 0.08 mm giữ nguyên. Giảm hàng chục nghìn phần tử SVG -> vài trăm: zoom/pan nhẹ hơn nhiều.
+        def polys(list, color)
+          return if list.empty?
+
+          list.each_slice(1500) do |chunk|
+            rings = chunk.map { |pts| Canvas.ccw(pts) }
+            if @fmt == :svg
+              d = rings.map { |pts| "M#{pts.map { |p| "#{n(p[0])} #{n(p[1])}" }.join('L')}Z" }.join
+              @out << %(<path d="#{d}" fill="#{color}" stroke="#{color}" stroke-width="0.08"/>)
+            else
+              path = rings.map { |pts| "#{xy(pts[0])} m " + pts[1..-1].map { |p| "#{xy(p)} l" }.join(' ') + ' h' }.join(' ')
+              @out << "#{rgb(color)} rg #{rgb(color)} RG #{Pdf.number(0.08 * K)} w #{path} B"
+            end
+          end
+        end
+
+        # Đa giác theo chiều quay thống nhất (diện tích có dấu >= 0 trong hệ giấy).
+        def self.ccw(pts)
+          a = 0.0
+          pts.each_with_index { |p, i| q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1] }
+          a.negative? ? pts.reverse : pts
+        end
+
+        # Gom các đa giác liền nhau cùng màu (giữ đúng thứ tự vẽ sau -> trước) rồi vẽ theo lô.
+        def fill_runs(items)
+          run = []
+          col = nil
+          items.each do |pts, c|
+            if c != col && !run.empty?
+              polys(run, col)
+              run = []
+            end
+            col = c
+            run << pts
+          end
+          polys(run, col) unless run.empty?
+        end
+
         def circle(c, r, fill, stroke, wt = 0.2)
           if @fmt == :svg
             @out << %(<circle cx="#{n(c[0])}" cy="#{n(c[1])}" r="#{n(r)}" fill="#{fill || 'none'}") +

@@ -21,6 +21,8 @@ module MTDesign
         class Task
           attr_reader :label
 
+          attr_reader :label
+
           def initialize(label, &block)
             @label = label
             @block = block
@@ -31,12 +33,16 @@ module MTDesign
           end
         end
 
+        def self.label_of(task)
+          (task.respond_to?(:label) ? task.label : task.class.name.split('::').last).to_s
+        end
+
         # Task chạy 1 lần rồi xong (dùng cho bước nhẹ: dàn trang, gửi kết quả).
         def self.once(label, &block)
           Task.new(label) { |job| block.call(job); true }
         end
 
-        attr_reader :name, :progress_text, :progress_pct, :result, :error, :state
+        attr_reader :name, :progress_text, :progress_pct, :result, :error, :state, :timings
 
         def initialize(name = 'job', slice: SLICE, on_progress: nil, on_done: nil, on_error: nil, log: nil, timer: nil)
           @name = name
@@ -54,6 +60,7 @@ module MTDesign
           @progress_pct = 0
           @last_sent = nil
           @data = {} # chỗ các Task trao dữ liệu cho nhau
+          @timings = Hash.new(0.0) # giây CPU thực chạy của từng bước (đo hiệu năng v2.16)
         end
 
         def [](k)
@@ -117,7 +124,9 @@ module MTDesign
 
             until @queue.empty?
               task = @queue.first
+              t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               done = task.call(self)
+              @timings[Job.label_of(task)] += Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0
               raise Cancelled, 'Đã huỷ.' if @cancel
 
               @queue.shift if done

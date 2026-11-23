@@ -83,14 +83,24 @@ module MTDesign
           end
 
           # -1 sau, 0 đồng phẳng, 1 trước, 2 cắt ngang
+          # (v2.16: tính trực tiếp trên số thực, không tạo mảng trung gian – hàm gọi nhiều nhất khi dựng cây)
           def side(pl, n, d)
+            nx = n[0]
+            ny = n[1]
+            nz = n[2]
             f = b = false
             pl[0].each do |p|
-              v = dot(n, p) - d
-              f = true if v > EPS
-              b = true if v < -EPS
+              v = nx * p[0] + ny * p[1] + nz * p[2] - d
+              if v > EPS
+                return 2 if b
+
+                f = true
+              elsif v < -EPS
+                return 2 if f
+
+                b = true
+              end
             end
-            return 2 if f && b
             return 1 if f
             return -1 if b
 
@@ -172,24 +182,43 @@ module MTDesign
             end
 
             # Chọn mặt phẳng cắt: vài mảnh lớn nhất + vài mảnh rải đều, ít bị cắt nhất.
+            # v2.16: chấm điểm trên mẫu <= 64 mảnh, dừng sớm ứng viên đã tệ hơn ứng viên tốt nhất (cây vẫn đúng,
+            # chỉ thứ tự chọn khác) – bước này chiếm ~2/3 thời gian dựng cây trên model nhiều mặt cong.
             def choose(list)
               return [list[0][2], list[0][3]] if list.length < 3
 
-              cand = [0, 1, 2, list.length / 3, list.length * 2 / 3].uniq.map { |k| list[k] }
-              step = [list.length / 160, 1].max
-              sample = (0...list.length).step(step).map { |k| list[k] }
-              best = cand.min_by do |c|
+              len = list.length
+              idx = len > 24 ? [0, 1, 2, len / 3, len * 2 / 3] : [0, 1, len / 2]
+              cand = idx.uniq.map { |k| list[k] }
+              step = [len / 64, 1].max
+              sample = step == 1 ? list : (0...len).step(step).map { |k| list[k] }
+              best = nil
+              best_score = nil
+              cand.each do |c|
+                n = c[2]
+                d = c[3]
                 splits = 0
-                fr = 0
-                bk = 0
+                bal = 0
+                worse = false
                 sample.each do |pl|
-                  case HiddenFill.side(pl, c[2], c[3])
-                  when 2 then splits += 1
-                  when 1 then fr += 1
-                  when -1 then bk += 1
+                  case HiddenFill.side(pl, n, d)
+                  when 2
+                    splits += 1
+                    if best_score && splits * 8 > best_score[0]
+                      worse = true
+                      break
+                    end
+                  when 1 then bal += 1
+                  when -1 then bal -= 1
                   end
                 end
-                [splits * 8 + (fr - bk).abs, -c[4]]
+                next if worse
+
+                score = [splits * 8 + bal.abs, -c[4]]
+                if best_score.nil? || (score <=> best_score).negative?
+                  best_score = score
+                  best = c
+                end
               end
               [best[2], best[3]]
             end

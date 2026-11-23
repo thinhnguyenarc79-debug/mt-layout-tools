@@ -63,6 +63,13 @@ module MTDesign
             @pos = sec['pos'].to_f
             @dir = sec['dir'].to_i.positive? ? 1 : -1
             @clipped = Geometry::Capture.new(cap.name, [], [], cap.materials, {})
+            # tô mặt: dùng lại cây BSP của bản trích gốc + cắt theo mặt phẳng (giữ phía dot(n, p) >= d)
+            if cap.respond_to?(:fill_tree)
+              n = [0.0, 0.0, 0.0]
+              n[@ax] = @dir.to_f
+              @clipped.fill_parent = cap
+              @clipped.fill_clip = [n, @pos * @dir]
+            end
             @cuts = []
             @cut_mats = [] # vật liệu của mặt sinh ra từng đoạn nét cắt -> hatch theo vật liệu
             @phase = :clip_edges

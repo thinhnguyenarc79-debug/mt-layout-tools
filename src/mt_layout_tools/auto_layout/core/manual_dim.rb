@@ -158,7 +158,16 @@ module MTDesign
 
         # Dữ liệu gửi giao diện để bắt điểm: đoạn thật [x1,y1,x2,y2] + khung bộ phận.
         def snap_payload(v)
-          { 'segs' => segs(v), 'w' => v[:w].to_f.round(2), 'h' => v[:h].to_f.round(2), 'truncated' => segs_total(v) > MAX_SNAP }
+          { 'segs' => segs(v), 'w' => v[:w].to_f.round(2), 'h' => v[:h].to_f.round(2), 'truncated' => segs_total(v) > MAX_SNAP,
+            'sig' => snap_meta(v)['sig'] }
+        end
+
+        # Chỉ gửi kèm mỗi lần dựng phần nhẹ (v2.16); đoạn hình học (có thể > 1 MB) chỉ gửi khi giao diện cần bắt điểm
+        # (callback 'snap'), và giao diện giữ lại cho tới khi chữ ký 'sig' đổi (hình học hình thay đổi).
+        def snap_meta(v)
+          sg = segs(v)
+          v[:snap_sig] ||= "#{sg.length}:#{sg.sum { |a| a[0] + a[1] * 3 + a[2] * 7 + a[3] * 11 }.round(1)}"
+          { 'w' => v[:w].to_f.round(2), 'h' => v[:h].to_f.round(2), 'n' => sg.length, 'sig' => v[:snap_sig] }
         end
 
         def segs_total(v)

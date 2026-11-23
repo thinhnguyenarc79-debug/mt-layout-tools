@@ -61,8 +61,22 @@ module MTDesign
           end
 
           # Cây BSP để tô mặt có che khuất đúng; dựng 1 lần cho mỗi bản trích, dùng chung mọi hình chiếu.
+          # Bản cắt của mặt cắt (fill_parent) dùng lại cây của bản trích gốc, chỉ cắt mảnh theo mặt phẳng cắt
+          # (fill_clip) lúc duyệt – thứ tự sau->trước của BSP vẫn đúng với mọi tập con (v2.16: bỏ dựng cây lần 2).
+          attr_accessor :fill_parent, :fill_clip
+
           def fill_tree
-            @fill_tree ||= HiddenFill::Builder.new(triangles)
+            @fill_tree ||= reuse_parent_tree? ? fill_parent.fill_tree : HiddenFill::Builder.new(triangles)
+          end
+
+          def fill_tree?
+            !@fill_tree.nil?
+          end
+
+          # Dùng lại cây gốc khi nó đã/ sẽ được dựng cho các hình khác (bản trích gốc được tô màu); nếu bản gốc
+          # quá nhiều mặt (các hình khác không tô) thì dựng cây nhỏ hơn từ riêng phần đã cắt.
+          def reuse_parent_tree?
+            fill_parent && fill_clip && (fill_parent.fill_tree? || fill_parent.triangles.length <= MAX_FILL)
           end
 
           # Bản sao KHÔNG có cánh (cho MẶT ĐỨNG THÁO CÁNH). Chỉ lọc dữ liệu đã đọc, không đụng file SKP.
@@ -470,7 +484,14 @@ module MTDesign
           end
 
           def phase_fill(job)
+            clip = @cap.reuse_parent_tree? && @cap.fill_clip
             done = @walker.each_piece(job) do |pl|
+              if clip
+                next if HiddenFill.side(pl, clip[0], clip[1]) == -1
+
+                pl = HiddenFill.split(pl, clip[0], clip[1])[0] if HiddenFill.side(pl, clip[0], clip[1]) == 2
+                next unless pl
+              end
               pts = pl[0].map { |p| @fn.call(p) }
               a = 0.0
               pts.each_with_index { |p, k| q = pts[(k + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1] }

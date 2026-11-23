@@ -266,7 +266,10 @@ module MTDesign
         # Gửi kèm giao diện: hình học bắt điểm của hình + DIM đã bám lại theo model hiện tại.
         def draw_manual_dims(cv, v, fr, page, info)
           key = v[:key].to_s
-          (info['snap'] ||= {})[key] = ManualDim.snap_payload(v) unless key == 'iso'
+          unless key == 'iso'
+            (info['snap'] ||= {})[key] = ManualDim.snap_meta(v)          # gửi kèm: nhẹ
+            (info['snap_data'] ||= {})[key] = ManualDim.snap_payload(v)  # controller giữ lại, gửi khi giao diện xin
+          end
           list = (page['manual_dims'] || {})[key]
           return if list.nil? || list.empty?
 
@@ -529,7 +532,7 @@ module MTDesign
           fill = v[:detail][:fill].nil? ? page['fill'] : v[:detail][:fill]
           body = lambda do
             # chỉ phần hình học trong vùng trích: mặt tô, nét (đã cắt sẵn), nét cắt + hatch của mặt cắt nguồn
-            src[:fills].each { |tri, color| cv.poly(tri.map(&tf), color) } if fill
+            cv.fill_runs(src[:fills].map { |tri, color| [tri.map(&tf), color] }) if fill
             chain(v[:lines].map { |a, b| [[ox + a[0] / s, oy + a[1] / s], [ox + b[0] / s, oy + b[1] / s]] })
               .each { |pl| cv.polyline(pl, 0.3, INK) }
             draw_cut(cv, src, tf, page['pens'])
@@ -765,7 +768,7 @@ module MTDesign
           mode = v[:key] == 'iso' ? page['iso_mode'].to_s : 'material'
           return if mode == 'none'
 
-          v[:fills].each { |tri, color, gray| cv.poly(tri.map(&tf), mode == 'mono' && gray ? gray : color) }
+          cv.fill_runs(v[:fills].map { |tri, color, gray| [tri.map(&tf), mode == 'mono' && gray ? gray : color] })
         end
 
         # Nhóm SVG class "secmark" để kéo đường cắt trực tiếp trên giấy.

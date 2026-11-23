@@ -1,7 +1,7 @@
 {
-  "version": "2.15.0",
+  "version": "2.16.0",
   "rbz_url": "https://raw.githubusercontent.com/thinhnguyenarc79-debug/mt-layout-tools/main/dist/mt_layout_tools.rbz",
   "rbz_path": "dist/mt_layout_tools.rbz",
-  "sha256": "460e7b9d4af44fc833800fbdb07c2abec47172d18d657dd3bee8c7603280f872",
-  "notes": "v2.15.0: chỉnh sửa trực tiếp DIM tự động (từng đoạn) và chữ trên bản vẽ"
+  "sha256": "7b22b547444ea9799dbb6d5be4e94056be91f105c62ddaf94b0f3301f190d8d1",
+  "notes": "v2.16.0: tối ưu zoom/pan và dựng hình cho model nhiều mặt cong; thêm Đo hiệu năng"
 }

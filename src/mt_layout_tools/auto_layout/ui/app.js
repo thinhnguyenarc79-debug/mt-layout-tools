@@ -50,6 +50,9 @@
         snapshot(); S.project = d.project; if (d.status) S.status = d.status; markDirty(); renderAll();
         openPage(d.open || (S.project.pages[0] && S.project.pages[0].id));
         if (d.message) msg(d.message, 'ok');
+      } else if (kind === 'snap') {
+        if (d.page_id !== S.cur) return;
+        S.snapData = S.snapData || {}; S.snapData[d.key] = d; if (S.mdIdx) S.mdIdx[d.key] = null;
       } else if (kind === 'page') {
         busy(false);
         if (d.page_id !== S.cur) return;
@@ -73,6 +76,8 @@
         S.project.pages.forEach(function (p) { if (d[p.id]) p.sheet_count = d[p.id]; }); renderPages();
       } else if (kind === 'warn') {
         msg(d.message, 'warn');
+      } else if (kind === 'perf') {
+        perfUi(d);
       } else if (kind === 'saved') {
         msg(d.message, 'ok');
       } else if (kind === 'error') {
@@ -1433,11 +1438,27 @@
     return p.manual_dims[k];
   }
   function mdFind(k, id) { return mdList(k).filter(function (d) { return d.id === id; })[0]; }
+  // Hình học bắt điểm (v2.16): không còn gửi kèm mỗi lần dựng; xin Ruby 1 lần cho mỗi hình khi cần (công cụ DIM,
+  // chỉnh DIM) và giữ lại cho tới khi chữ ký hình học (sig) đổi. Lưới chỉ mục dựng 1 lần, dùng lại mọi lần rê chuột.
+  function snapSegs(k) {
+    var m = S.info && S.info.snap && S.info.snap[k]; if (!m) return null;
+    var dd = S.snapData && S.snapData[k];
+    if (dd && dd.sig === m.sig) return dd.segs;
+    snapRequest(k); return null;
+  }
+  function snapRequest(k) {
+    var m = S.info && S.info.snap && S.info.snap[k]; if (!m || !S.cur) return;
+    S.snapReq = S.snapReq || {};
+    if (S.snapReq[k] === m.sig) return;
+    S.snapReq[k] = m.sig; call('snap', { page_id: S.cur, key: k });
+  }
+  function snapPrefetch() { Object.keys((S.info && S.info.snap) || {}).forEach(function (k) { snapSegs(k); }); }
   function mdIndex(k) {
     S.mdIdx = S.mdIdx || {};
     if (S.mdIdx[k]) return S.mdIdx[k];
-    var sn = S.info && S.info.snap && S.info.snap[k];
-    return (S.mdIdx[k] = sn ? new MDIM.Index(sn.segs, sn.w, sn.h) : null);
+    var m = S.info && S.info.snap && S.info.snap[k], segs = snapSegs(k);
+    if (!segs) return null;
+    return (S.mdIdx[k] = new MDIM.Index(segs, m.w, m.h));
   }
   function mdToV(k, pt) { var f = frameOf(k); return [(pt[0] - f[0]) * f[2], (pt[1] - f[1]) * f[2]]; }
   function mdToP(k, q) { var f = frameOf(k); return [f[0] + q[0] / f[2], f[1] + q[1] / f[2]]; }
@@ -1556,7 +1577,7 @@
       if (!k) { msg('Bấm vào phần hình vẽ của một hình chiếu / mặt cắt.', 'err'); return; }
       if (!(S.info.snap || {})[k]) { msg('Hình này không hỗ trợ DIM thủ công (trục đo).', 'err'); return; }
       if (S.mdGap) {
-        var segs = S.info.snap[k].segs, q = mdToV(k, pt), ax0 = cfg.axis === 'h' ? 'h' : 'v';
+        var segs = snapSegs(k) || [], q = mdToV(k, pt), ax0 = cfg.axis === 'h' ? 'h' : 'v';
         var gp = MDIM.gapAt(segs, q, ax0);
         if (!gp) { msg('Không tìm thấy hai cạnh bao quanh điểm bấm – bấm vào khoảng trống giữa hai tấm.', 'err'); return; }
         S.md = { step: 2, key: k, a: gp[0], b: gp[1], axis: ax0, kind: 'clear' };
@@ -1571,7 +1592,7 @@
       var sb = mdSnap(md.key, pt);
       if (Math.hypot(sb.p[0] - md.a[0], sb.p[1] - md.a[1]) < 0.5) { msg('Điểm cuối trùng điểm đầu – chọn điểm khác.', 'err'); return; }
       var axis = MDIM.axisOf(md.a, sb.p, cfg.axis, md.aSeg, sb.seg), a = md.a, b = sb.p;
-      if (cfg.kind === 'clear') { var rf = MDIM.refineClear(S.info.snap[md.key].segs, a, b, axis); a = rf[0]; b = rf[1]; }
+      if (cfg.kind === 'clear') { var rf = MDIM.refineClear(snapSegs(md.key) || [], a, b, axis); a = rf[0]; b = rf[1]; }
       S.md = { step: 2, key: md.key, a: a, b: b, axis: axis, kind: cfg.kind };
       msg((cfg.kind === 'clear' ? 'Thông thủy ' : '') + MD_AXES[axis] + ' = ' + mdLabel(MDIM.value(a, b, axis)) + ' mm. Di chuột để đặt đường DIM (' +
           (axis === 'v' ? { l: 'bên trái', r: 'bên phải', free: 'tự chọn' }[cfg.side] : 'trên/dưới') + '), bấm để xác nhận.', 'ok');
@@ -1695,6 +1716,7 @@
   }
   function dimName(d) { return (d && (d.text || d.label || mdLabel(d.value || 0))) + ' mm'; }
   function selectDim(sel, add) {
+    snapSegs(sel.key);
     S.selNote = null; S.selCap = null;
     if (!add) S.selDims = [sel];
     else {
@@ -1753,8 +1775,8 @@
     if (dr.g === 'a' || dr.g === 'b') {
       if (!dr.sn) return;
       var np = dr.sn.p, other = dr.g === 'a' ? 'b' : 'a', mo = sel.origin === 'manual' && mdFind(sel.key, sel.id);
-      if (mo && mo.kind === 'clear' && S.info.snap[sel.key]) { // DIM thông thủy: điểm mới tự về mặt tấm hướng vào khoảng hở
-        var pr = dr.g === 'a' ? MDIM.refineClear(S.info.snap[sel.key].segs, np, d.b, d.axis) : MDIM.refineClear(S.info.snap[sel.key].segs, d.a, np, d.axis);
+      if (mo && mo.kind === 'clear' && snapSegs(sel.key)) { // DIM thông thủy: điểm mới tự về mặt tấm hướng vào khoảng hở
+        var pr = dr.g === 'a' ? MDIM.refineClear(snapSegs(sel.key), np, d.b, d.axis) : MDIM.refineClear(snapSegs(sel.key), d.a, np, d.axis);
         np = dr.g === 'a' ? pr[0] : pr[1];
       }
       if (Math.hypot(np[0] - d[other][0], np[1] - d[other][1]) < 0.5) { msg('Hai điểm bám trùng nhau – giữ nguyên.', 'err'); requestRender(true); return; }
@@ -1977,6 +1999,76 @@
   }
   function capPaperPos(k) { var b = S.info && S.info.captions && S.info.captions[k]; return b ? [(b[0] + b[2]) / 2, b[1]] : null; }
 
+  // ---------------- ĐO HIỆU NĂNG (v2.16) ----------------
+  // Ruby đo model + quét + dựng + vẽ; giao diện đo tiếp FPS zoom / pan / rê chuột Smart Snap trên tờ vừa dựng,
+  // rồi ghép báo cáo, hiện bảng và lưu %TEMP%\mt_auto_layout_perf.txt. Chỉ đo, không đổi dự án.
+  $('perfBtn').onclick = function () {
+    var p = page(); if (!p) return;
+    S.perfRun = true;
+    msg('Đang đo hiệu năng: đọc lại model từ đầu và dựng lại trang (không sửa model)…', '');
+    call('perf', { project: S.project, page_id: p.id, sheet: S.sheet || 0 });
+  };
+  function raf() { return new Promise(function (r) { requestAnimationFrame(r); }); }
+  function frameStats(ts) {
+    var a = ts.slice().sort(function (x, y) { return x - y; }), n = a.length, avg = a.reduce(function (x, y) { return x + y; }, 0) / n;
+    return { avg: +avg.toFixed(1), p95: +a[Math.max(0, Math.ceil(n * 0.95) - 1)].toFixed(1), max: +a[n - 1].toFixed(1), fps: +(1000 / avg).toFixed(1) };
+  }
+  async function perfZoom(n) {
+    var st = $('stage'), r = st.getBoundingClientRect(), ts = [];
+    await raf(); var last = performance.now();
+    for (var i = 0; i < n; i++) {
+      st.dispatchEvent(new WheelEvent('wheel', { deltaY: i < n / 2 ? -100 : 100, clientX: r.left + r.width * 0.45, clientY: r.top + r.height * 0.5, bubbles: true, cancelable: true }));
+      await raf(); var t = performance.now(); ts.push(t - last); last = t;
+    }
+    var sg = [], s0 = performance.now(), sl = s0;
+    while (performance.now() - s0 < 450) { await raf(); var t2 = performance.now(); sg.push(t2 - sl); sl = t2; }
+    var o = frameStats(ts); o.commit_max = Math.round(Math.max.apply(null, sg)); return o;
+  }
+  async function perfPan(n) {
+    var ts = [], k0 = [S.panX, S.panY]; await raf(); var last = performance.now();
+    for (var i = 0; i < n; i++) { S.panX += 6; S.panY += 2; applyView(); await raf(); var t = performance.now(); ts.push(t - last); last = t; }
+    S.panX = k0[0]; S.panY = k0[1]; applyView(true); return frameStats(ts);
+  }
+  async function perfSnap(n) {
+    var keys = Object.keys((S.info && S.info.snap) || {}); if (!keys.length) return null;
+    var k = keys[0], t0 = performance.now();
+    while (!mdIndex(k) && performance.now() - t0 < 4000) await raf(); // chờ Ruby gửi hình học bắt điểm
+    var load = Math.round(performance.now() - t0), f = frameOf(k); if (!f || !mdIndex(k)) return { view: k, load_ms: load };
+    var hs = [], ts = []; await raf(); var last = performance.now();
+    for (var i = 0; i < n; i++) {
+      var pt = [f[0] + (f[3] / f[2]) * (0.1 + 0.8 * i / n), f[1] + (f[4] / f[2]) * (0.2 + 0.6 * ((i * 7) % n) / n)];
+      var h0 = performance.now(); mdSnap(k, pt); hs.push(performance.now() - h0);
+      await raf(); var t = performance.now(); ts.push(t - last); last = t;
+    }
+    var o = frameStats(ts), hsa = hs.slice().sort(function (x, y) { return x - y; });
+    o.view = k; o.load_ms = load; o.snap_avg_ms = +(hs.reduce(function (x, y) { return x + y; }, 0) / n).toFixed(2); o.snap_max_ms = +hsa[n - 1].toFixed(2);
+    return o;
+  }
+  function pad(x, n) { x = String(x); while (x.length < n) x += ' '; return x; }
+  async function perfUi(rep) {
+    if (!S.perfRun) return; S.perfRun = false;
+    await new Promise(function (r) { setTimeout(r, 300); }); // chờ tờ mới hiển thị xong
+    var z = await perfZoom(30), pn = await perfPan(30), sn = await perfSnap(40), m = rep.model || {}, L = [];
+    L.push('ĐO HIỆU NĂNG AUTO LAYOUT PRO v' + rep.plugin + ' – SketchUp ' + rep.sketchup + ' (Ruby ' + rep.ruby + ') – ' + new Date().toLocaleString('vi-VN'));
+    L.push('Model: ' + rep.name);
+    L.push('  Faces ' + m.faces + ' · Edges ' + m.edges + ' (mềm/mịn ' + (m.edges_soft || 0) + ', ẩn ' + (m.edges_hidden || 0) + ') · Groups ' + (m.groups || 0) +
+           ' · ComponentInstances ' + (m.components || 0) + ' · Definitions ' + m.definitions + ' · lồng ' + (m.depth || 0) + ' cấp · đếm ' + m.count_ms + ' ms');
+    L.push('Thời gian dựng (đọc lại từ đầu): tổng ' + rep.wall_ms + ' ms (CPU ' + rep.cpu_ms + ' ms)');
+    Object.keys(rep.timings_ms).forEach(function (k) { if (rep.timings_ms[k] >= 1) L.push('  ' + pad(k, 34) + rep.timings_ms[k] + ' ms'); });
+    L.push('Hình chiếu (nét thấy / chuỗi nét / mảng tô / nét cắt / mức khử nét):');
+    rep.views.forEach(function (v) { L.push('  ' + pad(v.name, 26) + pad(v.lines, 8) + pad(v.chains, 7) + pad(v.fills, 8) + pad(v.cut, 6) + 'mức ' + v.level); });
+    L.push('Tờ (SVG KB / số <path> / tổng phần tử / gói gửi giao diện KB / hình học bắt điểm KB – chỉ gửi khi cần):');
+    rep.sheets.forEach(function (x) { L.push('  tờ ' + (x.sheet + 1) + ': ' + x.svg_kb + ' KB · ' + x.paths + ' path · ' + x.elements + ' phần tử · ' + x.info_kb + ' KB · ' + x.snap_kb + ' KB'); });
+    L.push('Giao diện (đo trong cửa sổ plugin): phần tử trên giấy ' + document.querySelectorAll('#paper *').length);
+    L.push('  Zoom liên tục 30 nấc: ' + z.fps + ' FPS (khung TB ' + z.avg + ' ms, p95 ' + z.p95 + ', max ' + z.max + ' ms; khung chốt nét sau khi dừng ' + z.commit_max + ' ms)');
+    L.push('  Pan 30 bước: ' + pn.fps + ' FPS (TB ' + pn.avg + ' ms, max ' + pn.max + ' ms)');
+    if (sn && sn.fps) L.push('  Smart Snap rê chuột 40 bước (' + viewName(sn.view) + '): ' + sn.fps + ' FPS · tính bắt điểm TB ' + sn.snap_avg_ms + ' ms, max ' + sn.snap_max_ms + ' ms · tải hình học ' + sn.load_ms + ' ms');
+    var text = L.join('\n');
+    dialog('Đo hiệu năng – ' + rep.name, '<textarea id="perfTxt" readonly style="width:100%;height:340px;font:12px Consolas,monospace;white-space:pre">' + esc(text) + '</textarea>',
+      [['Sao chép', function () { var t = $('perfTxt'); t.select(); document.execCommand('copy'); msg('Đã sao chép báo cáo.', 'ok'); return false; }], ['Đóng', null, 'gold']]);
+    call('perf_save', { text: text });
+  }
+
   // ---------------- trang & dựng ----------------
   function openPage(id, j) {
     S.cur = id || null; S.sel = null; S.info = null; S.sheet = j || 0; S.selNote = null;
@@ -1993,6 +2085,8 @@
   }
   function showSvg(svg, info) {
     S.info = info; S.mdIdx = {};
+    if (S.openedPage !== S.cur) { S.snapData = {}; S.snapReq = {}; S.openedPage = S.cur; } // đổi trang: bỏ dữ liệu bắt điểm cũ
+    if (S.tool === 'mdim' || S.tool === 'edit' || (S.selDims && S.selDims.length)) setTimeout(snapPrefetch, 0);
     mdSync(info); dimSync(info);
     if (S.selDims) S.selDims = S.selDims.filter(function (x) { return !!dimInfo(x.key, x.id); });
     var pp = page();
@@ -2052,7 +2146,7 @@
         hr.setAttribute('fill', 'transparent'); hr.setAttribute('class', 'mdhit'); g.insertBefore(hr, g.firstChild);
       } catch (er) { /* getBBox lỗi khi SVG chưa hiển thị – bỏ qua */ }
     });
-    if (!S.fitted) { fit(); S.fitted = true; } else applyView();
+    if (!S.fitted) { fit(); S.fitted = true; } else applyView(true);
     overlay(); renderSyms();
     highlight(); renderMd();
     var paperName = S.project.paper;
@@ -2070,17 +2164,40 @@
 
   // ---------------- khung nhìn: zoom/pan ----------------
   function paperSize() { return PAPERS[S.project.paper] || PAPERS.A3; }
-  function applyView() {
+  // ZOOM/PAN BẰNG VIEWPORT TRANSFORM (v2.16). Lỗi cũ: mỗi nấc lăn chuột đổi width/height của tờ giấy -> trình duyệt
+  // dàn lại & vẽ lại TOÀN BỘ SVG (hàng chục nghìn nét/mảng tô) ngay trong sự kiện -> giật, ~2 khung/giây trên model cong.
+  // Nay: trong lúc zoom/pan chỉ đổi CSS transform (GPU ghép lớp, không vẽ lại, gộp theo requestAnimationFrame);
+  // dừng tay 160 ms mới "chốt" kích thước thật 1 lần để nét sắc lại. Không dựng lại model, không gọi Ruby.
+  function frameMove(fn, e) {
+    S.mvFn = fn; S.mvEvt = e;
+    if (!S.mvRaf) S.mvRaf = requestAnimationFrame(function () { S.mvRaf = 0; var f = S.mvFn; S.mvFn = null; if (f) f(S.mvEvt); });
+  }
+  function applyView(now) {
+    if (now) { commitView(); return; }
+    if (!S.viewRaf) S.viewRaf = requestAnimationFrame(paintView);
+    clearTimeout(S.viewIdle); S.viewIdle = setTimeout(commitView, 160);
+  }
+  function paintView() {
+    S.viewRaf = 0;
+    if (!S.kc) { commitView(); return; }
+    var el = $('paper');
+    el.style.transform = 'translate(' + S.panX + 'px,' + S.panY + 'px) scale(' + (S.k / S.kc) + ')';
+  }
+  function commitView() {
+    clearTimeout(S.viewIdle); if (S.viewRaf) { cancelAnimationFrame(S.viewRaf); S.viewRaf = 0; }
     var ps = paperSize(), el = $('paper');
-    el.style.width = (ps[0] * S.k) + 'px'; el.style.height = (ps[1] * S.k) + 'px';
-    el.style.left = S.panX + 'px'; el.style.top = S.panY + 'px';
+    if (S.kc !== S.k || el.dataset.w !== String(ps[0])) {
+      el.style.width = (ps[0] * S.k) + 'px'; el.style.height = (ps[1] * S.k) + 'px'; S.kc = S.k; el.dataset.w = String(ps[0]);
+    }
+    el.style.left = '0px'; el.style.top = '0px';
+    el.style.transform = 'translate(' + S.panX + 'px,' + S.panY + 'px)';
     var svg = el.querySelector('svg'); if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; }
   }
   function fit() {
     var st = $('stage'), ps = paperSize();
     S.k = Math.max(0.3, Math.min((st.clientWidth - 40) / ps[0], (st.clientHeight - 40) / ps[1]));
     S.panX = (st.clientWidth - ps[0] * S.k) / 2; S.panY = (st.clientHeight - ps[1] * S.k) / 2;
-    applyView();
+    applyView(true);
   }
   function zoomAt(f, cx, cy) {
     var nk = Math.max(0.3, Math.min(40, S.k * f));
@@ -2202,10 +2319,11 @@
   });
   window.addEventListener('mousemove', function (e) {
     window.__lastX = e.clientX; window.__lastY = e.clientY;
-    if (!drag && S.tool === 'mdim' && S.md) { mdMove(e); return; }
-    if (!drag && S.pickGrip) { gripMove(S.pickGrip, e); return; }
+    // Smart Snap / kéo grip: tối đa 1 lần tính mỗi khung hình (sự kiện chuột dồn dập chỉ lấy sự kiện cuối)
+    if (!drag && S.tool === 'mdim' && S.md) { frameMove(function (ev) { if (S.tool === 'mdim' && S.md) mdMove(ev); }, e); return; }
+    if (!drag && S.pickGrip) { frameMove(function (ev) { if (S.pickGrip) gripMove(S.pickGrip, ev); }, e); return; }
     if (!drag) return;
-    if (drag.mode === 'grip') { gripMove(drag, e); return; }
+    if (drag.mode === 'grip') { var dg = drag; frameMove(function (ev) { if (drag === dg) gripMove(dg, ev); }, e); return; }
     if (drag.mode === 'cap') {
       drag.dx = (e.clientX - drag.x) / S.k; drag.dy = (e.clientY - drag.y) / S.k;
       drag.g.setAttribute('transform', 'translate(' + drag.dx + ' ' + drag.dy + ')'); return;
@@ -2236,6 +2354,7 @@
   });
   window.addEventListener('mouseup', function () {
     if (!drag) return;
+    if (S.mvFn) { var mf = S.mvFn; S.mvFn = null; mf(S.mvEvt); } // xử lý nốt lần di chuột cuối trước khi chốt
     var d = drag; drag = null; $('stage').classList.remove('panning');
     if (d.mode === 'grip') { gripCommit(d); return; }
     if (d.mode === 'cap') {
@@ -2344,6 +2463,7 @@
   function setTool(t) {
     if (place) { place.el.remove(); place = null; }
     if (t === 'mdim') { S.md = { step: 0 }; S.mdGap = false; } else if (S.md) { mdCancel(); }
+    if (t === 'mdim' || t === 'edit') snapPrefetch();
     if (S.pickGrip || S.pickText) { S.pickGrip = null; S.pickText = null; var pgx = mdPrevGroup(); if (pgx) pgx.remove(); }
     closeInline();
     $('stage').classList.toggle('editmode', t === 'edit');
@@ -2388,7 +2508,7 @@
   $('svgPage').onclick = function () { if (S.cur) call('export_svg', { project: S.project, page_id: S.cur, sheet: S.sheet || 0 }); };
   $('openJson').onclick = function () { call('open_json', null); };
   $('saveJson').onclick = function () { call('save_json', S.project); };
-  window.addEventListener('resize', function () { if (S.cur) applyView(); });
+  window.addEventListener('resize', function () { if (S.cur) applyView(true); });
 
   // Dự án
   $('pName').onchange = function () { snapshot(); S.project.name = this.value; changed(false); };

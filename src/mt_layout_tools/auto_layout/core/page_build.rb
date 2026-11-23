@@ -416,7 +416,7 @@ module MTDesign
         end
 
         # ---------- 6+8. DIM + dàn trang: chia tờ -> xếp chỗ -> vẽ từng hình (mỗi hình 1 lô) -> ghép ----------
-        attr_reader :outputs
+        attr_reader :outputs, :views
 
         def finish_task
           Job.once('chia tờ') do |job|

@@ -19,6 +19,7 @@ require_relative 'core/door_symbols'
 require_relative 'core/door_swing'
 require_relative 'core/manual_dim'
 require_relative 'core/dim_edit'
+require_relative 'core/perf_probe'
 require_relative 'core/sheet'
 require_relative 'core/page_build'
 require_relative 'core/model_scanner'
@@ -56,7 +57,7 @@ module MTDesign
             'pick' => :on_pick, 'cancel' => :on_cancel, 'pick_doors' => :on_pick_doors,
             'assign_parts' => :on_assign_parts, 'highlight_parts' => :on_highlight_parts, 'scan_parts' => :on_scan_parts,
             'highlight_part' => :on_highlight_part, 'add_models' => :on_add_models, 'autosave' => :on_autosave,
-            'discard_draft' => :on_discard_draft
+            'discard_draft' => :on_discard_draft, 'snap' => :on_snap, 'perf' => :on_perf, 'perf_save' => :on_perf_save
           }.each do |name, handler|
             d.add_action_callback(name) do |_ctx, arg|
               guard(d, name) { send(handler, d, arg) }
@@ -370,8 +371,65 @@ module MTDesign
             svg, info = outs[want.clamp(0, outs.length - 1)]
             info['layout'] = Sheet.layout_of(outs)
             info['ms'] = ((Time.now - t0) * 1000).round
+            @snap_data = { page['id'] => info.delete('snap_data') || {} } # hình học bắt điểm: chỉ gửi khi cần
             push(d, 'page', { 'page_id' => page['id'], 'svg' => svg, 'info' => info })
           end)
+        end
+
+        # ĐO HIỆU NĂNG trang đang mở trên model thật: đếm model (API), xoá cache rồi dựng lại từ đầu (quét + mọi hình +
+        # vẽ) và đo từng bước; gửi kết quả + tờ vừa dựng cho giao diện đo tiếp zoom/pan/Smart Snap. Không sửa model.
+        def on_perf(d, arg)
+          data = parse(arg)
+          project = ProjectStore.clean(data['project'])
+          page = project['pages'].find { |p| p['id'] == data['page_id'] }
+          raise ArgumentError, 'Không tìm thấy trang.' unless page
+
+          root = env.find(page['pid'])
+          raise ArgumentError, 'Không tìm thấy Group/Component của trang này trong model.' unless root
+
+          t = Time.now
+          stats = PerfProbe.model_stats(root)
+          stats['count_ms'] = ((Time.now - t) * 1000).round
+          @job&.cancel!
+          reset_cache # đo "lạnh": đọc lại toàn bộ hình học như lần đầu
+          t0 = Time.now
+          pb = PageBuild.new(env, project, page, :svg, lambda { |p, n|
+            ProjectStore.sheet_codes(project, { p['id'] => n })[p['id']].first
+          })
+          want = data['sheet'].to_i
+          job = nil
+          job = start_job(d, 'perf', pb.tasks, lambda do
+            outs = pb.outputs
+            wall = ((Time.now - t0) * 1000).round
+            report = { 'model' => stats, 'name' => root.name.to_s.empty? ? root.definition.name.to_s : root.name.to_s,
+                       'timings_ms' => PerfProbe.timings(job), 'cpu_ms' => (job.timings.values.sum * 1000).round, 'wall_ms' => wall,
+                       'views' => PerfProbe.view_stats(pb.views), 'sheets' => PerfProbe.sheet_stats(outs),
+                       'sketchup' => Sketchup.version.to_s, 'ruby' => RUBY_VERSION, 'plugin' => MTDesign::LayoutTools::VERSION }
+            svg, info = outs[want.clamp(0, outs.length - 1)]
+            info['layout'] = Sheet.layout_of(outs)
+            info['ms'] = wall
+            @snap_data = { page['id'] => info.delete('snap_data') || {} }
+            push(d, 'page', { 'page_id' => page['id'], 'svg' => svg, 'info' => info })
+            push(d, 'perf', report)
+          end)
+        end
+
+        # Lưu báo cáo đo hiệu năng (giao diện ghép thêm FPS) ra %TEMP%\mt_auto_layout_perf.txt + nhật ký.
+        def on_perf_save(d, arg)
+          text = parse(arg)['text'].to_s
+          path = File.join(Dir.tmpdir, 'mt_auto_layout_perf.txt')
+          File.open(path, 'a:UTF-8') { |f| f.puts(text, '') }
+          log("đo hiệu năng:\n#{text}")
+          push(d, 'saved', { 'message' => "Đã lưu báo cáo hiệu năng: #{path}" })
+        end
+
+        # Smart Snap xin hình học bắt điểm của 1 hình (lần dựng gần nhất) – không dựng lại gì.
+        def on_snap(d, arg)
+          q = parse(arg)
+          data = ((@snap_data || {})[q['page_id']] || {})[q['key'].to_s]
+          return unless data
+
+          push(d, 'snap', data.merge('page_id' => q['page_id'], 'key' => q['key'].to_s))
         end
 
         # "Cập nhật bản vẽ": đọc lại hình học từ SketchUp (bỏ cache) rồi dựng lại.

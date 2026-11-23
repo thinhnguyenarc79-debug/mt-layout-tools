@@ -86,7 +86,11 @@ class TestManualDim < Minitest::Test
 
   def test_3_snap_chi_gom_hinh_hoc_thuc
     pb, = MD.run('front' => [MD.clear_dim])
-    sn = MD.info(pb)['snap']['front']
+    sn = MD.info(pb)['snap_data']['front']
+    meta = MD.info(pb)['snap']['front']
+    refute meta.key?('segs'), 'gửi kèm mỗi lần dựng chỉ có phần nhẹ'
+    assert_equal sn['sig'], meta['sig']
+    assert_equal sn['segs'].length, meta['n']
     assert sn['segs'].length.positive?
     # mặt dưới đợt 768 (v = 1232) và mặt trên đợt 400 (v = 1582) có trong dữ liệu bắt điểm
     [1232.0, 1582.0].each do |vv|
